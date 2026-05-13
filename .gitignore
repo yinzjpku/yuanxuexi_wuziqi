@@ -1,0 +1,32 @@
+# 编译输出 - 每个人电脑上编译都会自动生成
+build/
+debug/
+release/
+*.o
+*.obj
+
+# Qt 自动生成的文件 - 编译时自动产生
+moc_*
+qrc_*
+ui_*.h
+
+# 自动生成的构建文件
+Makefile
+Makefile.Debug
+Makefile.Release
+
+# 个人配置文件 - 含有你的本地路径，别人用不了
+*.pro.user
+*.pro.user.*
+
+# IDE 用户配置 - 你的个人设置
+.qtcreator/
+
+# 可执行文件 - 不安全也多余
+*.exe
+*.out
+*.app
+
+# 系统文件
+Thumbs.db
+.DS_Store

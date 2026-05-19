@@ -29,6 +29,8 @@ MainWindow::MainWindow(QWidget *parent)
     game = nullptr;
     gameWidget = nullptr;
     skillPanel = nullptr;
+    skillPanel2 = nullptr;
+    boardOffsetX = 0;
     skipBtn = nullptr;
     blockBtn = nullptr;
     hintBtn = nullptr;
@@ -55,6 +57,11 @@ MainWindow::~MainWindow()
     {
         delete skillPanel;
         skillPanel = nullptr;
+    }
+    if (skillPanel2)
+    {
+        delete skillPanel2;
+        skillPanel2 = nullptr;
     }
     if (menuWidget)
     {
@@ -149,73 +156,108 @@ void MainWindow::startGame(GameMode mode)
 
     int boardSize = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
     int skillPanelWidth = 150;
-    setFixedSize(boardSize + skillPanelWidth, boardSize + 60);
+
+    if (mode == PVP_MODE)
+    {
+        boardOffsetX = skillPanelWidth;
+        setFixedSize(boardSize + skillPanelWidth * 2, boardSize + 60);
+    }
+    else
+    {
+        boardOffsetX = 0;
+        setFixedSize(boardSize + skillPanelWidth, boardSize + 60);
+    }
 
     if (skillPanel)
     {
         delete skillPanel;
         skillPanel = nullptr;
     }
-    skillPanel = new QWidget(this);
-    skillPanel->setGeometry(boardSize, 50, skillPanelWidth, boardSize);
-    skillPanel->setStyleSheet("background-color: rgb(240, 240, 240);");
+    if (skillPanel2)
+    {
+        delete skillPanel2;
+        skillPanel2 = nullptr;
+    }
 
-    QVBoxLayout *skillLayout = new QVBoxLayout(skillPanel);
-    skillLayout->setContentsMargins(10, 20, 10, 20);
-    skillLayout->setSpacing(15);
+    auto createPanel = [this, boardSize, skillPanelWidth](int x, bool isPrimary) {
+        QWidget *panel = new QWidget(this);
+        panel->setGeometry(x, 50, skillPanelWidth, boardSize);
+        panel->setStyleSheet("background-color: rgb(240, 240, 240);");
 
-    QLabel *skillTitle = new QLabel("技能面板", skillPanel);
-    skillTitle->setAlignment(Qt::AlignCenter);
-    skillTitle->setStyleSheet("font-size: 16px; font-weight: bold;");
-    skillLayout->addWidget(skillTitle);
+        QVBoxLayout *skillLayout = new QVBoxLayout(panel);
+        skillLayout->setContentsMargins(10, 20, 10, 20);
+        skillLayout->setSpacing(15);
 
-    skipBtn = new QPushButton("跳过答题\n(高能耗)", skillPanel);
-    skipBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #9C27B0; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #7B1FA2; } QPushButton:disabled { background-color: #BDBDBD; }");
-    skipBtn->setToolTip("消耗能量跳过答题，直接落子");
-    skillLayout->addWidget(skipBtn);
+        QLabel *skillTitle = new QLabel("技能面板", panel);
+        skillTitle->setAlignment(Qt::AlignCenter);
+        skillTitle->setStyleSheet("font-size: 16px; font-weight: bold;");
+        skillLayout->addWidget(skillTitle);
 
-    blockBtn = new QPushButton("封锁对手\n(中能耗)", skillPanel);
-    blockBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #F44336; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #D32F2F; } QPushButton:disabled { background-color: #BDBDBD; }");
-    blockBtn->setToolTip("消耗能量，禁止对手在指定区域落子");
-    skillLayout->addWidget(blockBtn);
+        QPushButton *sb = new QPushButton("跳过答题\n(高能耗)", panel);
+        sb->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #9C27B0; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #7B1FA2; } QPushButton:disabled { background-color: #BDBDBD; }");
+        sb->setToolTip("消耗能量跳过答题，直接落子");
+        skillLayout->addWidget(sb);
+        if (isPrimary) skipBtn = sb;
 
-    hintBtn = new QPushButton("提示答案\n(低能耗)", skillPanel);
-    hintBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #FF9800; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #F57C00; } QPushButton:disabled { background-color: #BDBDBD; }");
-    hintBtn->setToolTip("消耗能量，排除两个错误选项");
-    skillLayout->addWidget(hintBtn);
+        QPushButton *bb = new QPushButton("封锁对手\n(中能耗)", panel);
+        bb->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #F44336; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #D32F2F; } QPushButton:disabled { background-color: #BDBDBD; }");
+        bb->setToolTip("消耗能量，禁止对手在指定区域落子");
+        skillLayout->addWidget(bb);
+        if (isPrimary) blockBtn = bb;
 
-    energyBtn = new QPushButton("能量: 0", skillPanel);
-    energyBtn->setStyleSheet("QPushButton { font-size: 16px; padding: 10px; background-color: #2196F3; color: white; border: none; border-radius: 5px; }");
-    energyBtn->setToolTip("当前能量值，连续答对可获得额外能量");
-    energyBtn->setEnabled(false);
-    skillLayout->addWidget(energyBtn);
+        QPushButton *hb = new QPushButton("提示答案\n(低能耗)", panel);
+        hb->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #FF9800; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #F57C00; } QPushButton:disabled { background-color: #BDBDBD; }");
+        hb->setToolTip("消耗能量，排除两个错误选项");
+        skillLayout->addWidget(hb);
+        if (isPrimary) hintBtn = hb;
 
-    QLabel *extraLabel = new QLabel("更多技能", skillPanel);
-    extraLabel->setAlignment(Qt::AlignCenter);
-    extraLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #666; margin-top: 10px;");
-    skillLayout->addWidget(extraLabel);
+        QPushButton *eb = new QPushButton("能量: 0", panel);
+        eb->setStyleSheet("QPushButton { font-size: 16px; padding: 10px; background-color: #2196F3; color: white; border: none; border-radius: 5px; }");
+        eb->setToolTip("当前能量值，连续答对可获得额外能量");
+        eb->setEnabled(false);
+        skillLayout->addWidget(eb);
+        if (isPrimary) energyBtn = eb;
 
-    QPushButton *skill4 = new QPushButton("", skillPanel);
-    skill4->setStyleSheet("QPushButton { font-size: 14px; padding: 8px; background-color: #795548; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #5D4037; }");
-    skillLayout->addWidget(skill4);
+        QLabel *extraLabel = new QLabel("更多技能", panel);
+        extraLabel->setAlignment(Qt::AlignCenter);
+        extraLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #666; margin-top: 10px;");
+        skillLayout->addWidget(extraLabel);
 
-    QPushButton *skill5 = new QPushButton("", skillPanel);
-    skill5->setStyleSheet("QPushButton { font-size: 14px; padding: 8px; background-color: #00BCD4; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #0097A7; }");
-    skillLayout->addWidget(skill5);
+        QPushButton *skill4 = new QPushButton("", panel);
+        skill4->setStyleSheet("QPushButton { font-size: 14px; padding: 8px; background-color: #795548; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #5D4037; }");
+        skillLayout->addWidget(skill4);
 
-    QPushButton *skill6 = new QPushButton("", skillPanel);
-    skill6->setStyleSheet("QPushButton { font-size: 14px; padding: 8px; background-color: #8BC34A; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #689F38; }");
-    skillLayout->addWidget(skill6);
+        QPushButton *skill5 = new QPushButton("", panel);
+        skill5->setStyleSheet("QPushButton { font-size: 14px; padding: 8px; background-color: #00BCD4; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #0097A7; }");
+        skillLayout->addWidget(skill5);
 
-    skillLayout->addStretch();
+        QPushButton *skill6 = new QPushButton("", panel);
+        skill6->setStyleSheet("QPushButton { font-size: 14px; padding: 8px; background-color: #8BC34A; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #689F38; }");
+        skillLayout->addWidget(skill6);
 
-    QPushButton *backBtn = new QPushButton("返回主菜单", skillPanel);
-    backBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #607D8B; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #546E7A; }");
-    backBtn->setToolTip("返回游戏主菜单");
-    connect(backBtn, SIGNAL(clicked()), this, SLOT(onBackToMenuClicked()));
-    skillLayout->addWidget(backBtn);
+        skillLayout->addStretch();
 
-    skillPanel->show();
+        QPushButton *backBtn = new QPushButton("返回主菜单", panel);
+        backBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #607D8B; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #546E7A; }");
+        backBtn->setToolTip("返回游戏主菜单");
+        connect(backBtn, SIGNAL(clicked()), this, SLOT(onBackToMenuClicked()));
+        skillLayout->addWidget(backBtn);
+
+        return panel;
+    };
+
+    if (mode == PVP_MODE)
+    {
+        skillPanel = createPanel(0, true);
+        skillPanel2 = createPanel(boardOffsetX + boardSize, false);
+        skillPanel->show();
+        skillPanel2->show();
+    }
+    else
+    {
+        skillPanel = createPanel(boardSize, true);
+        skillPanel->show();
+    }
 
     menuBar()->clear();
     QMenu *gameMenu = menuBar()->addMenu("游戏");
@@ -265,6 +307,11 @@ void MainWindow::onBackToMenuClicked()
         delete skillPanel;
         skillPanel = nullptr;
     }
+    if (skillPanel2)
+    {
+        delete skillPanel2;
+        skillPanel2 = nullptr;
+    }
     currentMode = MENU_MODE;
     setFixedSize(400, 380);
     menuBar()->clear();
@@ -287,18 +334,18 @@ void MainWindow::paintEvent(QPaintEvent *event)
 
     int boardWidth = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
     int boardHeight = boardWidth;
-    for (int i = 0; i < kBoardSizeNum + 1; i++)
+    for (int i = 0; i <= kBoardSizeNum; i++)
     {
-        painter.drawLine(kBoardMargin + kBlockSize * i, kBoardMargin,
-                         kBoardMargin + kBlockSize * i, boardHeight - kBoardMargin);
-        painter.drawLine(kBoardMargin, kBoardMargin + kBlockSize * i,
-                         boardWidth - kBoardMargin, kBoardMargin + kBlockSize * i);
+        painter.drawLine(kBoardMargin + kBlockSize * i + boardOffsetX, kBoardMargin,
+                         kBoardMargin + kBlockSize * i + boardOffsetX, boardHeight - kBoardMargin);
+        painter.drawLine(kBoardMargin + boardOffsetX, kBoardMargin + kBlockSize * i,
+                         boardWidth - kBoardMargin + boardOffsetX, kBoardMargin + kBlockSize * i);
     }
 
     QBrush brush;
     brush.setStyle(Qt::SolidPattern);
-    if (clickPosRow > 0 && clickPosRow < kBoardSizeNum &&
-        clickPosCol > 0 && clickPosCol < kBoardSizeNum &&
+    if (clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
+        clickPosCol >= 0 && clickPosCol < kBoardSizeNum &&
         game && game->gameMapVec[clickPosRow][clickPosCol] == 0)
     {
         if (game->playerFlag)
@@ -306,8 +353,8 @@ void MainWindow::paintEvent(QPaintEvent *event)
         else
             brush.setColor(Qt::black);
         painter.setBrush(brush);
-        painter.drawRect(kBoardMargin + kBlockSize * clickPosCol - kMarkSize / 2,
-                         kBoardMargin + kBlockSize * clickPosRow - kMarkSize / 2,
+        painter.drawRect(kBoardMargin + kBlockSize * clickPosCol + kBlockSize / 2 - kMarkSize / 2 + boardOffsetX,
+                         kBoardMargin + kBlockSize * clickPosRow + kBlockSize / 2 - kMarkSize / 2,
                          kMarkSize, kMarkSize);
     }
 
@@ -320,22 +367,22 @@ void MainWindow::paintEvent(QPaintEvent *event)
                 {
                     brush.setColor(Qt::white);
                     painter.setBrush(brush);
-                    painter.drawEllipse(kBoardMargin + kBlockSize * j - kRadius,
-                                        kBoardMargin + kBlockSize * i - kRadius,
+                    painter.drawEllipse(kBoardMargin + kBlockSize * j + kBlockSize / 2 - kRadius + boardOffsetX,
+                                         kBoardMargin + kBlockSize * i + kBlockSize / 2 - kRadius,
                                         kRadius * 2, kRadius * 2);
                 }
                 else if (game->gameMapVec[i][j] == -1)
                 {
                     brush.setColor(Qt::black);
                     painter.setBrush(brush);
-                    painter.drawEllipse(kBoardMargin + kBlockSize * j - kRadius,
-                                        kBoardMargin + kBlockSize * i - kRadius,
+                    painter.drawEllipse(kBoardMargin + kBlockSize * j + kBlockSize / 2 - kRadius + boardOffsetX,
+                                         kBoardMargin + kBlockSize * i + kBlockSize / 2 - kRadius,
                                         kRadius * 2, kRadius * 2);
                 }
             }
 
-        if (clickPosRow > 0 && clickPosRow < kBoardSizeNum &&
-            clickPosCol > 0 && clickPosCol < kBoardSizeNum &&
+        if (clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
+            clickPosCol >= 0 && clickPosCol < kBoardSizeNum &&
             (game->gameMapVec[clickPosRow][clickPosCol] == 1 ||
              game->gameMapVec[clickPosRow][clickPosCol] == -1))
         {
@@ -373,36 +420,29 @@ void MainWindow::mouseMoveEvent(QMouseEvent *event)
 {
     if (!game || currentMode == MENU_MODE) return;
 
-    int x = event->position().x();
+    int x = event->position().x() - boardOffsetX;
     int y = event->position().y();
-
-    int boardWidth = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
-    int boardHeight = boardWidth;
-    int validX = boardWidth - kBoardMargin;
-    int validY = boardHeight;
 
     clickPosRow = -1;
     clickPosCol = -1;
 
-    if (x >= kBoardMargin + kBlockSize / 2 &&
-            x < validX &&
-            y >= kBoardMargin + kBlockSize / 2 &&
-            y < validY)
+    for (int c = 0; c < kBoardSizeNum; c++)
     {
-        int col = x / kBlockSize;
-        int row = y / kBlockSize;
-
-        int leftTopPosX = kBoardMargin + kBlockSize * col;
-        int leftTopPosY = kBoardMargin + kBlockSize * row;
-
-        int len = sqrt((x - leftTopPosX) * (x - leftTopPosX) + (y - leftTopPosY) * (y - leftTopPosY));
-        if (len < kPosDelta) { clickPosRow = row; clickPosCol = col; }
-        len = sqrt((x - leftTopPosX - kBlockSize) * (x - leftTopPosX - kBlockSize) + (y - leftTopPosY) * (y - leftTopPosY));
-        if (len < kPosDelta) { clickPosRow = row; clickPosCol = col + 1; }
-        len = sqrt((x - leftTopPosX) * (x - leftTopPosX) + (y - leftTopPosY - kBlockSize) * (y - leftTopPosY - kBlockSize));
-        if (len < kPosDelta) { clickPosRow = row + 1; clickPosCol = col; }
-        len = sqrt((x - leftTopPosX - kBlockSize) * (x - leftTopPosX - kBlockSize) + (y - leftTopPosY - kBlockSize) * (y - leftTopPosY - kBlockSize));
-        if (len < kPosDelta) { clickPosRow = row + 1; clickPosCol = col + 1; }
+        int cellLeft = kBoardMargin + kBlockSize * c;
+        int cellRight = cellLeft + kBlockSize;
+        if (x >= cellLeft && x < cellRight)
+        {
+            for (int r = 0; r < kBoardSizeNum; r++)
+            {
+                int cellTop = kBoardMargin + kBlockSize * r;
+                int cellBottom = cellTop + kBlockSize;
+                if (y >= cellTop && y < cellBottom)
+                {
+                    clickPosRow = r;
+                    clickPosCol = c;
+                }
+            }
+        }
     }
 
     update();

@@ -42,10 +42,12 @@ private:
     QComboBox *difficultyCombo;
     QComboBox *topicCombo;
     QWidget *skillPanel;
+    QWidget *skillPanel2;
     QPushButton *skipBtn;
     QPushButton *blockBtn;
     QPushButton *hintBtn;
     QPushButton *energyBtn;
+    int boardOffsetX;
 
 private slots:
     void chessOneByPerson();

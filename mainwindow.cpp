@@ -11,7 +11,7 @@
 #include <QGridLayout>
 #include <math.h>
 #include "mainwindow.h"
-
+#include "QuestionDialog.h"
 const int kBoardMargin = 30;
 const int kRadius = 15;
 const int kMarkSize = 6;
@@ -118,10 +118,6 @@ void MainWindow::setupMenuMode()
     connect(pvpBtn, SIGNAL(clicked()), this, SLOT(onStartPVPClicked()));
     mainLayout->addWidget(pvpBtn);
 
-    QPushButton *pveBtn = new QPushButton("人机对战\n(玩家vs电脑)", menuWidget);
-    pveBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #2196F3; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #0b7dda; }");
-    connect(pveBtn, SIGNAL(clicked()), this, SLOT(onStartPVEClicked()));
-    mainLayout->addWidget(pveBtn);
 
     QPushButton *exitBtn = new QPushButton("退出", menuWidget);
     exitBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #f44336; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #da190b; }");
@@ -137,128 +133,152 @@ void MainWindow::startGame(GameMode mode)
     currentMode = mode;
     difficulty = static_cast<Difficulty>(difficultyCombo->currentData().toInt());
 
-    menuWidget->hide();
+    if (menuWidget) {
+        menuWidget->hide();
+        menuWidget->lower(); // 将菜单置于底层，防止隐形遮罩拦截鼠标
+    }
 
     if (!game)
         game = new GameModel;
 
-    if (mode == PVP_MODE)
-    {
-        game_type = PERSON;
-    }
-    else
-    {
-        game_type = BOT;
-    }
-
-    game->gameStatus = PLAYING;
-    game->startGame(game_type);
-
+    // 重置游戏状态
+    game->startGame();
+    wrongPositions.clear();
     int boardSize = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
     int skillPanelWidth = 150;
 
-    if (mode == PVP_MODE)
-    {
-        boardOffsetX = skillPanelWidth;
-        setFixedSize(boardSize + skillPanelWidth * 2, boardSize + 60);
-    }
-    else
-    {
-        boardOffsetX = 0;
-        setFixedSize(boardSize + skillPanelWidth, boardSize + 60);
-    }
+    // 纯PVP模式：固定左右两侧均有技能面板
+    boardOffsetX = skillPanelWidth;
+    setFixedSize(boardSize + skillPanelWidth * 2, boardSize + 60);
 
-    if (skillPanel)
-    {
+    // ================== 1. 先安全清理旧面板 ==================
+    if (skillPanel) {
         delete skillPanel;
         skillPanel = nullptr;
     }
-    if (skillPanel2)
-    {
+    if (skillPanel2) {
         delete skillPanel2;
         skillPanel2 = nullptr;
     }
 
+    // ================== 2. 定义 createPanel (必须在使用前定义) ==================
     auto createPanel = [this, boardSize, skillPanelWidth](int x, bool isPrimary) {
         QWidget *panel = new QWidget(this);
-        panel->setGeometry(x, 50, skillPanelWidth, boardSize);
-        panel->setStyleSheet("background-color: rgb(240, 240, 240);");
+        panel->setGeometry(x, 40, skillPanelWidth, boardSize); // 40 为预留的顶部菜单栏高度
+        panel->setStyleSheet("background-color: #F0F0F0; border: 1px solid #DCDCDC;");
 
-        QVBoxLayout *skillLayout = new QVBoxLayout(panel);
-        skillLayout->setContentsMargins(10, 20, 10, 20);
-        skillLayout->setSpacing(15);
+        // 使用垂直布局，让 6 个控件从上到下等间距紧凑排列
+        QVBoxLayout *layout = new QVBoxLayout(panel);
+        layout->setContentsMargins(10, 15, 10, 15);
+        layout->setSpacing(12); // 按钮之间的间距
+        // 【新增：系统控制按钮区域 - 放在最顶部】
+        QHBoxLayout *controlLayout = new QHBoxLayout();
+        controlLayout->setSpacing(5);
 
-        QLabel *skillTitle = new QLabel("技能面板", panel);
-        skillTitle->setAlignment(Qt::AlignCenter);
-        skillTitle->setStyleSheet("font-size: 16px; font-weight: bold;");
-        skillLayout->addWidget(skillTitle);
+        QPushButton *restartBtn = new QPushButton("重开", panel);
+        restartBtn->setStyleSheet("QPushButton { background-color: #757575; color: white; font-size: 11px; font-weight: bold; min-height: 28px; border-radius: 4px; } QPushButton:hover { background-color: #616161; } QPushButton:pressed { background-color: #424242; }");
+        connect(restartBtn, SIGNAL(clicked()), this, SLOT(onStartPVPClicked())); // 绑定重新开始
 
-        QPushButton *sb = new QPushButton("跳过答题\n(高能耗)", panel);
-        sb->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #9C27B0; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #7B1FA2; } QPushButton:disabled { background-color: #BDBDBD; }");
-        sb->setToolTip("消耗能量跳过答题，直接落子");
-        skillLayout->addWidget(sb);
-        if (isPrimary) skipBtn = sb;
+        QPushButton *menuBtn = new QPushButton("主菜单", panel);
+        menuBtn->setStyleSheet("QPushButton { background-color: #757575; color: white; font-size: 11px; font-weight: bold; min-height: 28px; border-radius: 4px; } QPushButton:hover { background-color: #616161; } QPushButton:pressed { background-color: #424242; }");
+        connect(menuBtn, SIGNAL(clicked()), this, SLOT(onBackToMenuClicked()));   // 绑定返回主菜单
 
-        QPushButton *bb = new QPushButton("封锁对手\n(中能耗)", panel);
-        bb->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #F44336; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #D32F2F; } QPushButton:disabled { background-color: #BDBDBD; }");
-        bb->setToolTip("消耗能量，禁止对手在指定区域落子");
-        skillLayout->addWidget(bb);
-        if (isPrimary) blockBtn = bb;
+        controlLayout->addWidget(restartBtn);
+        controlLayout->addWidget(menuBtn);
+        layout->addLayout(controlLayout); // 将控制按钮加入垂直布局的最上方
+        // 1. 定义 5 个技能的名字、消耗以及颜色
+        struct SkillInfo {
+            QString name;
+            int cost;
+            QString color;
+        };
 
-        QPushButton *hb = new QPushButton("提示答案\n(低能耗)", panel);
-        hb->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #FF9800; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #F57C00; } QPushButton:disabled { background-color: #BDBDBD; }");
-        hb->setToolTip("消耗能量，排除两个错误选项");
-        skillLayout->addWidget(hb);
-        if (isPrimary) hintBtn = hb;
+        std::vector<SkillInfo> skills = {
+            {"跳过答题\n(消耗 5)", 5, "#9C27B0"}, // 紫色
+            {"强力封锁\n(消耗 4)", 4, "#E91E63"}, // 粉红
+            {"封锁对手\n(消耗 3)", 3, "#F44336"}, // 红色
+            {"置换棋子\n(消耗 2)", 2, "#FF9800"}, // 橙色
+            {"提示答案\n(消耗 1)", 1, "#03A9F4"}  // 蓝色
+        };
 
-        QPushButton *eb = new QPushButton("能量: 0", panel);
-        eb->setStyleSheet("QPushButton { font-size: 16px; padding: 10px; background-color: #2196F3; color: white; border: none; border-radius: 5px; }");
-        eb->setToolTip("当前能量值，连续答对可获得额外能量");
-        eb->setEnabled(false);
-        skillLayout->addWidget(eb);
-        if (isPrimary) energyBtn = eb;
+        // 2. 循环生成前 5 个技能按钮
+        for (int i = 0; i < 5; ++i) {
+            QPushButton *btn = new QPushButton(skills[i].name, panel);
 
-        QLabel *extraLabel = new QLabel("更多技能", panel);
-        extraLabel->setAlignment(Qt::AlignCenter);
-        extraLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #666; margin-top: 10px;");
-        skillLayout->addWidget(extraLabel);
+            btn->setStyleSheet(QString(
+                                   "QPushButton {"
+                                   "  background-color: %1;"      // 基础颜色
+                                   "  color: white;"
+                                   "  font-size: 13px;"
+                                   "  font-weight: bold;"
+                                   "  border: none;"
+                                   "  border-radius: 6px;"
+                                   "  min-height: 50px;"
+                                   "}"
+                                   "QPushButton:hover {"
+                                   "  background-color: %1;"
+                                   "  opacity: 0.85;"             // 鼠标悬停时：变淡一点点
+                                   "}"
+                                   "QPushButton:pressed {"
+                                   "  background-color: #333333;" // 核心修改：鼠标按下时，按钮瞬间变成深灰色
+                                   "  padding-left: 3px;"         // 核心修改：让文字往右下角微调 1 像素，模拟真实的物理下沉按压感
+                                   "  padding-top: 3px;"
+                                   "}"
+                                   "QPushButton:disabled {"
+                                   "  background-color: #BDBDBD;"
+                                   "  color: #E0E0E0;"
+                                   "}"
+                                   ).arg(skills[i].color));
 
-        QPushButton *skill4 = new QPushButton("", panel);
-        skill4->setStyleSheet("QPushButton { font-size: 14px; padding: 8px; background-color: #795548; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #5D4037; }");
-        skillLayout->addWidget(skill4);
+            // 测试专用弹窗连接：点击会直接弹窗提示，百分百保证能点
+            connect(btn, &QPushButton::clicked, this, [this, isPrimary, cost = skills[i].cost]() {
+                  return;
+            });
 
-        QPushButton *skill5 = new QPushButton("", panel);
-        skill5->setStyleSheet("QPushButton { font-size: 14px; padding: 8px; background-color: #00BCD4; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #0097A7; }");
-        skillLayout->addWidget(skill5);
+            layout->addWidget(btn);
+        }
 
-        QPushButton *skill6 = new QPushButton("", panel);
-        skill6->setStyleSheet("QPushButton { font-size: 14px; padding: 8px; background-color: #8BC34A; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #689F38; }");
-        skillLayout->addWidget(skill6);
+        // 3. 创建最下方的能量显示按钮
+        QPushButton *energyDisplay = new QPushButton("能量: 0", panel);
+        energyDisplay->setFocusPolicy(Qt::NoFocus);
+        energyDisplay->setStyleSheet(
+            "QPushButton {"
+            "  background-color: #4CAF50;"
+            "  color: white;"
+            "  font-size: 15px;"
+            "  font-weight: bold;"
+            "  border: 2px solid #388E3C;"
+            "  border-radius: 6px;"
+            "  min-height: 55px;"
+            "}"
+            "QPushButton:hover, QPushButton:pressed {"
+            "  background-color: #4CAF50;"
+            "}"
+            );
 
-        skillLayout->addStretch();
+        layout->addWidget(energyDisplay);
 
-        QPushButton *backBtn = new QPushButton("返回主菜单", panel);
-        backBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #607D8B; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #546E7A; }");
-        backBtn->setToolTip("返回游戏主菜单");
-        connect(backBtn, SIGNAL(clicked()), this, SLOT(onBackToMenuClicked()));
-        skillLayout->addWidget(backBtn);
+        if (isPrimary) {
+            p1EnergyLabel = energyDisplay;
+        } else {
+            p2EnergyLabel = energyDisplay;
+        }
 
         return panel;
-    };
+    }; // Lambda 定义结束
 
-    if (mode == PVP_MODE)
-    {
-        skillPanel = createPanel(0, true);
-        skillPanel2 = createPanel(boardOffsetX + boardSize, false);
-        skillPanel->show();
-        skillPanel2->show();
-    }
-    else
-    {
-        skillPanel = createPanel(boardSize, true);
-        skillPanel->show();
-    }
+    // ================== 3. 实例化并显示新面板 ==================
+    skillPanel  = createPanel(0, true);                      // 左侧玩家1
+    skillPanel2 = createPanel(boardOffsetX + boardSize, false); // 右侧玩家2
 
+    // 强行提到最顶层，防止点击被棋盘层挡住
+    skillPanel->raise();
+    skillPanel2->raise();
+
+    skillPanel->show();
+    skillPanel2->show();
+
+    // 调整菜单栏
     menuBar()->clear();
     QMenu *gameMenu = menuBar()->addMenu("游戏");
     QAction *backAction = new QAction("返回主菜单", this);
@@ -266,21 +286,8 @@ void MainWindow::startGame(GameMode mode)
     gameMenu->addAction(backAction);
 
     QAction *restartAction = new QAction("重新开始", this);
-    if (mode == PVP_MODE)
-        connect(restartAction, SIGNAL(triggered()), this, SLOT(onStartPVPClicked()));
-    else
-        connect(restartAction, SIGNAL(triggered()), this, SLOT(onStartPVEClicked()));
+    connect(restartAction, SIGNAL(triggered()), this, SLOT(onStartPVPClicked()));
     gameMenu->addAction(restartAction);
-
-    QAction *difficultyAction = new QAction(QString("当前难度: %1").arg(
-        difficultyCombo->currentText()), this);
-    difficultyAction->setEnabled(false);
-    gameMenu->addAction(difficultyAction);
-
-    QAction *topicAction = new QAction(QString("当前主题: %1").arg(
-        topicCombo->currentText()), this);
-    topicAction->setEnabled(false);
-    gameMenu->addAction(topicAction);
 
     update();
 }
@@ -290,10 +297,6 @@ void MainWindow::onStartPVPClicked()
     startGame(PVP_MODE);
 }
 
-void MainWindow::onStartPVEClicked()
-{
-    startGame(PVE_MODE);
-}
 
 void MainWindow::onBackToMenuClicked()
 {
@@ -312,6 +315,7 @@ void MainWindow::onBackToMenuClicked()
         delete skillPanel2;
         skillPanel2 = nullptr;
     }
+    wrongPositions.clear();
     currentMode = MENU_MODE;
     setFixedSize(400, 380);
     menuBar()->clear();
@@ -320,6 +324,15 @@ void MainWindow::onBackToMenuClicked()
 
 void MainWindow::paintEvent(QPaintEvent *event)
 {
+    // 1. 同步能量条显示
+    if (game) {
+        if (p1EnergyLabel) {
+            p1EnergyLabel->setText(QString("能量: %1").arg(game->p1Energy));
+        }
+        if (p2EnergyLabel) {
+            p2EnergyLabel->setText(QString("能量: %1").arg(game->p2Energy));
+        }
+    }
     Q_UNUSED(event);
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
@@ -330,10 +343,14 @@ void MainWindow::paintEvent(QPaintEvent *event)
         return;
     }
 
+    // 画背景和棋盘格子线
     painter.fillRect(rect(), QColor(210, 180, 140));
 
     int boardWidth = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
     int boardHeight = boardWidth;
+
+    // 【重要：画格子线前先重置画笔，确保格子线是正常的黑色细线】
+    painter.setPen(QPen(Qt::black, 1));
     for (int i = 0; i <= kBoardSizeNum; i++)
     {
         painter.drawLine(kBoardMargin + kBlockSize * i + boardOffsetX, kBoardMargin,
@@ -342,45 +359,86 @@ void MainWindow::paintEvent(QPaintEvent *event)
                          boardWidth - kBoardMargin + boardOffsetX, kBoardMargin + kBlockSize * i);
     }
 
+    // =================================================================
+    // 解决问题 1：修复鼠标悬停提示颜色不一致
+    // =================================================================
     QBrush brush;
     brush.setStyle(Qt::SolidPattern);
+
     if (clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
         clickPosCol >= 0 && clickPosCol < kBoardSizeNum &&
         game && game->gameMapVec[clickPosRow][clickPosCol] == 0)
     {
+        // ⚠️ 核心修改：如果你是用 !game->playerFlag 或者 game->playerFlag 决定的，
+        // 请确保这里的 if 条件和 actionByPerson 内部放子前的判断完全对齐！
+        // 假设当前谁落子，提示框就是谁的颜色：
         if (game->playerFlag)
-            brush.setColor(Qt::white);
+            brush.setColor(Qt::white); // 白方回合显示白提示
         else
-            brush.setColor(Qt::black);
+            brush.setColor(Qt::black); // 黑方回合显示黑提示
+
         painter.setBrush(brush);
+        // 重置画笔，防止悬停框带红边
+        painter.setPen(Qt::NoPen);
+
         painter.drawRect(kBoardMargin + kBlockSize * clickPosCol + kBlockSize / 2 - kMarkSize / 2 + boardOffsetX,
                          kBoardMargin + kBlockSize * clickPosRow + kBlockSize / 2 - kMarkSize / 2,
                          kMarkSize, kMarkSize);
     }
 
+    // =================================================================
+    // 解决问题 2 & 3：遍历棋盘绘制棋子与红叉
+    // =================================================================
     if (game)
     {
-        for (int i = 0; i < kBoardSizeNum; i++)
-            for (int j = 0; j < kBoardSizeNum; j++)
-            {
-                if (game->gameMapVec[i][j] == 1)
+        for (int i = 0; i < kBoardSizeNum; i++) {
+            for (int j = 0; j < kBoardSizeNum; j++) {
+
+                int centerX = boardOffsetX + kBoardMargin + j * kBlockSize + (kBlockSize / 2);
+                int centerY = kBoardMargin + i * kBlockSize + (kBlockSize / 2);
+
+                if (game->gameMapVec[i][j] == 1) // 白子
                 {
                     brush.setColor(Qt::white);
                     painter.setBrush(brush);
-                    painter.drawEllipse(kBoardMargin + kBlockSize * j + kBlockSize / 2 - kRadius + boardOffsetX,
-                                         kBoardMargin + kBlockSize * i + kBlockSize / 2 - kRadius,
-                                        kRadius * 2, kRadius * 2);
+                    painter.setPen(Qt::NoPen);
+                    painter.drawEllipse(centerX - kRadius, centerY - kRadius, kRadius * 2, kRadius * 2);
                 }
-                else if (game->gameMapVec[i][j] == -1)
+                else if (game->gameMapVec[i][j] == -1) // 黑子
                 {
                     brush.setColor(Qt::black);
                     painter.setBrush(brush);
-                    painter.drawEllipse(kBoardMargin + kBlockSize * j + kBlockSize / 2 - kRadius + boardOffsetX,
-                                         kBoardMargin + kBlockSize * i + kBlockSize / 2 - kRadius,
-                                        kRadius * 2, kRadius * 2);
+                    painter.setPen(Qt::NoPen);
+                    painter.drawEllipse(centerX - kRadius, centerY - kRadius, kRadius * 2, kRadius * 2);
+                }
+
+                // =================================================================
+                // ⚠️ 【核心修改】：检查当前格子 (i, j) 是否在答错的红叉列表里
+                // =================================================================
+                bool shouldDrawCross = false;
+                for (const auto& pos : wrongPositions) {
+                    if (pos.first == i && pos.second == j) {
+                        shouldDrawCross = true;
+                        break;
+                    }
+                }
+
+                if (shouldDrawCross)
+                {
+                    painter.setRenderHint(QPainter::Antialiasing, true);
+                    QPen pen(Qt::red);
+                    pen.setWidth(3);
+                    painter.setPen(pen);
+                    painter.setBrush(Qt::NoBrush);
+
+                    int r = kBlockSize / 4;
+                    painter.drawLine(centerX - r, centerY - r, centerX + r, centerY + r);
+                    painter.drawLine(centerX + r, centerY - r, centerX - r, centerY + r);
                 }
             }
+        }
 
+        // 游戏输赢判定保持原样...
         if (clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
             clickPosCol >= 0 && clickPosCol < kBoardSizeNum &&
             (game->gameMapVec[clickPosRow][clickPosCol] == 1 ||
@@ -389,17 +447,10 @@ void MainWindow::paintEvent(QPaintEvent *event)
             if (game->isWin(clickPosRow, clickPosCol) && game->gameStatus == PLAYING)
             {
                 game->gameStatus = WIN;
-                QString str;
-                if (game->gameMapVec[clickPosRow][clickPosCol] == 1)
-                    str = "白方";
-                else
-                    str = "黑方";
+                QString str = (game->gameMapVec[clickPosRow][clickPosCol] == 1) ? "白方" : "黑方";
                 QMessageBox::StandardButton btnValue = QMessageBox::information(this, "胜利", str + " 获胜!");
-
-                if (btnValue == QMessageBox::Ok)
-                {
-                    game->startGame(game_type);
-                    game->gameStatus = PLAYING;
+                if (btnValue == QMessageBox::Ok) {
+                    QTimer::singleShot(0, this, SLOT(onBackToMenuClicked()));
                 }
             }
         }
@@ -407,10 +458,8 @@ void MainWindow::paintEvent(QPaintEvent *event)
         if (game->isDeadGame())
         {
             QMessageBox::StandardButton btnValue = QMessageBox::information(this, "平局", "和棋!");
-            if (btnValue == QMessageBox::Ok)
-            {
-                game->startGame(game_type);
-                game->gameStatus = PLAYING;
+            if (btnValue == QMessageBox::Ok) {
+                QTimer::singleShot(0, this, SLOT(onBackToMenuClicked()));
             }
         }
     }
@@ -450,17 +499,61 @@ void MainWindow::mouseMoveEvent(QMouseEvent *event)
 
 void MainWindow::mouseReleaseEvent(QMouseEvent *event)
 {
-    Q_UNUSED(event);
-    if (!game || currentMode == MENU_MODE) return;
+    if (!game || currentMode == MENU_MODE || game->gameStatus != PLAYING) return;
 
-    if (!(game_type == BOT && !game->playerFlag))
-    {
-        chessOneByPerson();
-        if (game->gameType == BOT && !game->playerFlag)
-        {
-            QTimer::singleShot(kAIDelay, this, SLOT(chessOneByAI()));
+    int x = event->position().x() - boardOffsetX;
+    int y = event->position().y();
+
+    int row = (y - kBoardMargin) / kBlockSize;
+    int col = (x - kBoardMargin) / kBlockSize;
+
+    if (row < 0 || row >= kBoardSizeNum || col < 0 || col >= kBoardSizeNum) return;
+
+    // =================================================================
+    // ⚠️ 【核心修改】：遍历红叉列表，点中任何一个历史红叉都直接拦截
+    // =================================================================
+    for (const auto& pos : wrongPositions) {
+        if (row == pos.first && col == pos.second) {
+            QMessageBox::warning(this, "已被封锁", "这个格子你刚才已经答错被封锁了！请选其他格子。");
+            return;
         }
     }
+
+    if (!game->isValidMove(row, col)) return;
+
+    pendingRow = row;
+    pendingCol = col;
+
+    Question testQ; // 你的题库数据...
+    testQ.questionText = "以下哪个关键字用于在 C++ 中申请动态内存？";
+    testQ.options = {"A. malloc", "B. new", "C. alloc", "D. choice"};
+    testQ.correctAnswer = 1;
+    testQ.category = "基础语法";
+
+    QuestionDialog dlg(testQ, this);
+    dlg.exec();
+
+    if (dlg.isCorrect())
+    {
+        // 情况 A: 答对了！
+        game->actionByPerson(pendingRow, pendingCol);
+
+        // ⚠️ 【核心修改】：既然成功落子进入下一回合，一口气清空本回合所有的红叉记录
+        wrongPositions.clear();
+
+        QMessageBox::information(this, "回答正确", "回答正确，成功落子！并为你积攒了能量。");
+        if (game->playerFlag) game->p2Energy += 1; else game->p1Energy += 1;
+    }
+    else
+    {
+        // 情况 B: 答错了！
+        // ⚠️ 【核心修改】：不覆盖旧的，而是把新的答错坐标追加到列表里，让他们并存
+        wrongPositions.push_back({pendingRow, pendingCol});
+
+        QMessageBox::warning(this, "回答错误", "回答错误！该格子已被你封锁，请换个格子重新尝试。");
+    }
+
+    update();
 }
 
 void MainWindow::chessOneByPerson()
@@ -475,11 +568,3 @@ void MainWindow::chessOneByPerson()
     }
 }
 
-void MainWindow::chessOneByAI()
-{
-    if (game)
-    {
-        game->actionByAI(clickPosRow, clickPosCol);
-        update();
-    }
-}

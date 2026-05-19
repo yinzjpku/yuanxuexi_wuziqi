@@ -8,8 +8,8 @@
 #include <QLabel>
 #include <QListWidget>
 #include "GameModel.h"
-
-enum GameMode { MENU_MODE, PVP_MODE, PVE_MODE };
+#include <vector>
+enum GameMode { MENU_MODE, PVP_MODE};
 enum Difficulty { EASY, MEDIUM, HARD };
 
 class MainWindow : public QMainWindow
@@ -32,7 +32,6 @@ private:
     void startGame(GameMode mode);
 
     GameModel *game;
-    GameType game_type;
     int clickPosRow, clickPosCol;
     GameMode currentMode;
     Difficulty difficulty;
@@ -47,13 +46,15 @@ private:
     QPushButton *blockBtn;
     QPushButton *hintBtn;
     QPushButton *energyBtn;
+    QPushButton *p1EnergyLabel;
+    QPushButton *p2EnergyLabel;
     int boardOffsetX;
-
+    int pendingRow; // 记录玩家当前点击、等待答题验证的行
+    int pendingCol; // 记录玩家当前点击、等待答题验证的列
+    std::vector<std::pair<int, int>> wrongPositions;
 private slots:
     void chessOneByPerson();
-    void chessOneByAI();
     void onStartPVPClicked();
-    void onStartPVEClicked();
     void onBackToMenuClicked();
 };
 

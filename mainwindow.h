@@ -9,6 +9,8 @@
 #include <QListWidget>
 #include "GameModel.h"
 #include <vector>
+#include "QuestionDialog.h"
+#include <QList>
 enum GameMode { MENU_MODE, PVP_MODE};
 enum Difficulty { EASY, MEDIUM, HARD };
 
@@ -52,10 +54,15 @@ private:
     int pendingRow; // 记录玩家当前点击、等待答题验证的行
     int pendingCol; // 记录玩家当前点击、等待答题验证的列
     std::vector<std::pair<int, int>> wrongPositions;
+    QList<Question> m_questionBank;
+    QList<Question> m_filteredQuestionBank;
+    void loadQuestionsFromJson();
+    Question getRandomQuestion();
 private slots:
     void chessOneByPerson();
     void onStartPVPClicked();
     void onBackToMenuClicked();
+    void filterQuestions();
 };
 
 #endif // MAINWINDOW_H

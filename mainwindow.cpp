@@ -12,6 +12,11 @@
 #include <math.h>
 #include "mainwindow.h"
 #include "QuestionDialog.h"
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QRandomGenerator>
 const int kBoardMargin = 30;
 const int kRadius = 15;
 const int kMarkSize = 6;
@@ -44,6 +49,7 @@ MainWindow::MainWindow(QWidget *parent)
     menuWidget = new QWidget(this);
     menuWidget->setGeometry(0, 0, 400, 380);
     setupMenuMode();
+    loadQuestionsFromJson();
 }
 
 MainWindow::~MainWindow()
@@ -103,14 +109,19 @@ void MainWindow::setupMenuMode()
 
     topicCombo = new QComboBox(menuWidget);
     topicCombo->addItem("全部");
-    topicCombo->addItem("指针");
-    topicCombo->addItem("类与对象");
+    topicCombo->addItem("类与对象基础");
+    topicCombo->addItem("继承与多态");
+    topicCombo->addItem("运算符重载");
     topicCombo->addItem("STL");
-    topicCombo->addItem("算法");
-    topicCombo->addItem("数据结构");
+    topicCombo->addItem("文件，模版，c++新特性");
     topicCombo->setStyleSheet("font-size: 14px; padding: 5px;");
     mainLayout->addWidget(topicCombo);
-
+    connect(difficultyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::filterQuestions);
+    connect(topicCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::filterQuestions);
+    loadQuestionsFromJson();
+    filterQuestions();
     mainLayout->addSpacing(15);
 
     QPushButton *pvpBtn = new QPushButton("双人对战\n(两名玩家轮流落子)", menuWidget);
@@ -524,13 +535,9 @@ void MainWindow::mouseReleaseEvent(QMouseEvent *event)
     pendingRow = row;
     pendingCol = col;
 
-    Question testQ; // 你的题库数据...
-    testQ.questionText = "以下哪个关键字用于在 C++ 中申请动态内存？";
-    testQ.options = {"A. malloc", "B. new", "C. alloc", "D. choice"};
-    testQ.correctAnswer = 1;
-    testQ.category = "基础语法";
+    Question currentQ = getRandomQuestion();
 
-    QuestionDialog dlg(testQ, this);
+    QuestionDialog dlg(currentQ, this);
     dlg.exec();
 
     if (dlg.isCorrect())
@@ -567,4 +574,94 @@ void MainWindow::chessOneByPerson()
         update();
     }
 }
+void MainWindow::loadQuestionsFromJson()
+{
+    // 假设你的 json 文件放在可执行文件同目录下，或者放到了 Qt 资源文件(qrc)中
+    QFile file(":/questions.json"); // 如果用 qrc 资源文件，前面加冒号。如果是本地路径直接写 "questions.json"
 
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "错误", "无法加载题库文件！");
+        return;
+    }
+
+    QByteArray fileData = file.readAll();
+    file.close();
+
+    QJsonDocument doc = QJsonDocument::fromJson(fileData);
+    if (!doc.isArray()) return;
+
+    QJsonArray jsonArray = doc.array();
+
+    // 遍历 JSON 数组，将每一项转为 Question 结构体并存入 m_questionBank
+    for (int i = 0; i < jsonArray.size(); ++i) {
+        QJsonObject jsonObj = jsonArray[i].toObject();
+
+        Question q;
+        q.id = jsonObj["id"].toInt();
+        q.questionText = jsonObj["questionText"].toString();
+        q.correctAnswer = jsonObj["correctAnswer"].toInt();
+        q.category = jsonObj["category"].toString();
+        q.difficulty = jsonObj["difficulty"].toInt();
+        QJsonArray optionsArray = jsonObj["options"].toArray();
+        for (int j = 0; j < optionsArray.size(); ++j) {
+            q.options.append(optionsArray[j].toString());
+        }
+
+        m_questionBank.append(q);
+    }
+}
+
+// 2. 随机抽题函数
+Question MainWindow::getRandomQuestion()
+{
+    // 【边界情况处理】：如果某种难度+某个知识点组合下，一题都没有，怎么办？
+    if (m_filteredQuestionBank.isEmpty()) {
+        QMessageBox::warning(this, "题库枯竭", "当前选择的难度和知识点下没有题目！将为您随机抽取其他题目。");
+
+        // 兜底方案：退回到从总题库抽，防止游戏崩溃
+        if (!m_questionBank.isEmpty()) {
+            int randomIndex = QRandomGenerator::global()->bounded(m_questionBank.size());
+            return m_questionBank.at(randomIndex);
+        } else {
+            // 最惨的情况：总题库也是空的
+            Question fallbackQ;
+            fallbackQ.questionText = "题库加载失败或为空？";
+            fallbackQ.options = {"A. 是", "B. 否", "C. 也许", "D. 不确定"};
+            fallbackQ.correctAnswer = 0;
+            return fallbackQ;
+        }
+    }
+
+    // 正常情况：从过滤后的题库中随机抽取
+    int randomIndex = QRandomGenerator::global()->bounded(m_filteredQuestionBank.size());
+    return m_filteredQuestionBank.at(randomIndex);
+}
+void MainWindow::filterQuestions()
+{
+    m_filteredQuestionBank.clear(); // 先清空过滤题库
+
+    // 获取当前下拉框选中的值
+    // difficultyCombo 的第二参数是 UserData，用 currentData().toInt() 获取 (比如你写的 EASY, MEDIUM)
+    int selectedDifficulty = difficultyCombo->currentData().toInt();
+    // topicCombo 我们直接拿文字来匹配
+    QString selectedTopic = topicCombo->currentText();
+
+    // 遍历总题库，进行筛选
+    for (int i = 0; i < m_questionBank.size(); ++i) {
+        const Question &q = m_questionBank.at(i);
+
+        // 条件1：难度匹配
+        bool matchDifficulty = (q.difficulty == selectedDifficulty);
+
+        // 条件2：知识点匹配（如果选了"全部"，则默认全匹配；否则要求字符串完全相等）
+        bool matchTopic = (selectedTopic == "全部" || q.category == selectedTopic);
+
+        // 两个条件都满足，才加入当前题库
+        if (matchDifficulty && matchTopic) {
+            m_filteredQuestionBank.append(q);
+        }
+    }
+
+    // 调试信息：看看当前条件下筛选出了多少题
+    qDebug() << "筛选完成！当前条件下共有题目数量：" << m_filteredQuestionBank.size();
+}

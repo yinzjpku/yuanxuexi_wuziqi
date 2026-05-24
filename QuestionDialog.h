@@ -15,6 +15,7 @@ struct Question {
     QStringList options;
     int correctAnswer;
     QString category;
+    int difficulty;
 };
 
 // 确保编译器百分之百认识 QDialog

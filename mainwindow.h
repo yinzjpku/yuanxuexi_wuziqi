@@ -51,9 +51,12 @@ private:
     QPushButton *p1EnergyLabel;
     QPushButton *p2EnergyLabel;
     int boardOffsetX;
-    int pendingRow; // 记录玩家当前点击、等待答题验证的行
-    int pendingCol; // 记录玩家当前点击、等待答题验证的列
+    int pendingRow;
+    int pendingCol;
+    int lastMoveRow;
+    int lastMoveCol;
     std::vector<std::pair<int, int>> wrongPositions;
+    std::vector<std::pair<int, int>> m_winPieces;
     QList<Question> m_questionBank;
     QList<Question> m_filteredQuestionBank;
     void loadQuestionsFromJson();

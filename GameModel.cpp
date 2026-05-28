@@ -101,6 +101,41 @@ bool GameModel::isWin(int row, int col)
     return false;
 }
 
+std::vector<std::pair<int,int>> GameModel::getWinLine(int row, int col) const
+{
+    std::vector<std::pair<int,int>> result;
+    if (row < 0 || row >= kBoardSizeNum || col < 0 || col >= kBoardSizeNum)
+        return result;
+    int piece = gameMapVec[row][col];
+    if (piece == 0 || piece == 2)
+        return result;
+
+    const int dirs[4][2] = {{0,1}, {1,0}, {1,1}, {1,-1}};
+
+    for (int d = 0; d < 4; d++) {
+        int dr = dirs[d][0], dc = dirs[d][1];
+        std::vector<std::pair<int,int>> line;
+        line.push_back({row, col});
+
+        for (int i = 1; i < 5; i++) {
+            int nr = row + dr * i, nc = col + dc * i;
+            if (nr < 0 || nr >= kBoardSizeNum || nc < 0 || nc >= kBoardSizeNum) break;
+            if (gameMapVec[nr][nc] != piece) break;
+            line.push_back({nr, nc});
+        }
+        for (int i = 1; i < 5; i++) {
+            int nr = row - dr * i, nc = col - dc * i;
+            if (nr < 0 || nr >= kBoardSizeNum || nc < 0 || nc >= kBoardSizeNum) break;
+            if (gameMapVec[nr][nc] != piece) break;
+            line.push_back({nr, nc});
+        }
+
+        if ((int)line.size() >= 5)
+            return line;
+    }
+    return result;
+}
+
 bool GameModel::isDeadGame()
 {
     for (int i = 0; i < kBoardSizeNum; i++)

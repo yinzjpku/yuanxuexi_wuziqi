@@ -54,6 +54,9 @@ public:
     void markAsForbidden(int row, int col) {
         gameMapVec[row][col] = 2; // 2 代表因为答错而被封锁的格子
     }
+
+    // 获取连成五子的所有坐标（用于高亮显示）
+    std::vector<std::pair<int,int>> getWinLine(int row, int col) const;
 };
 
 #endif // GAMEMODEL_H

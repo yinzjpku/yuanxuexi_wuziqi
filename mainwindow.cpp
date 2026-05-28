@@ -27,7 +27,7 @@ const int kAIDelay = 700;
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), currentMode(MENU_MODE), difficulty(MEDIUM)
 {
-    setFixedSize(400, 380);
+    setFixedSize(440, 480);
     setWindowTitle("五子棋编程对战");
     setMouseTracking(true);
 
@@ -44,10 +44,12 @@ MainWindow::MainWindow(QWidget *parent)
     topicCombo = nullptr;
     clickPosRow = -1;
     clickPosCol = -1;
+    lastMoveRow = -1;
+    lastMoveCol = -1;
     currentMode = MENU_MODE;
 
     menuWidget = new QWidget(this);
-    menuWidget->setGeometry(0, 0, 400, 380);
+    menuWidget->setGeometry(0, 0, 440, 480);
     setupMenuMode();
     loadQuestionsFromJson();
 }
@@ -78,60 +80,133 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupMenuMode()
 {
-    menuWidget->setStyleSheet("background-color: rgb(220, 220, 220);");
+    menuWidget->setStyleSheet("background-color: transparent;");
     QVBoxLayout *mainLayout = new QVBoxLayout(menuWidget);
     mainLayout->setSpacing(10);
-    mainLayout->setContentsMargins(80, 30, 80, 30);
+    mainLayout->setContentsMargins(60, 30, 60, 30);
 
     QLabel *titleLabel = new QLabel("五子棋编程对战", menuWidget);
     titleLabel->setAlignment(Qt::AlignCenter);
-    QFont titleFont = titleLabel->font();
-    titleFont.setPointSize(22);
-    titleFont.setBold(true);
-    titleLabel->setFont(titleFont);
+    titleLabel->setStyleSheet(
+        "color: white;"
+        "font-size: 28px;"
+        "font-weight: bold;"
+        "padding: 5px;"
+        "background: transparent;"
+    );
     mainLayout->addWidget(titleLabel);
 
-    QLabel *difficultyLabel = new QLabel("难度选择:", menuWidget);
-    difficultyLabel->setStyleSheet("font-size: 14px;");
-    mainLayout->addWidget(difficultyLabel);
+    QLabel *subtitleLabel = new QLabel("答题落子 · 策略对决", menuWidget);
+    subtitleLabel->setAlignment(Qt::AlignCenter);
+    subtitleLabel->setStyleSheet(
+        "color: rgba(255,255,255,180);"
+        "font-size: 14px;"
+        "background: transparent;"
+        "padding-bottom: 10px;"
+    );
+    mainLayout->addWidget(subtitleLabel);
 
-    difficultyCombo = new QComboBox(menuWidget);
+    QWidget *cardWidget = new QWidget(menuWidget);
+    cardWidget->setStyleSheet(
+        "QWidget {"
+        "  background-color: rgba(255,255,255,230);"
+        "  border-radius: 12px;"
+        "}"
+    );
+    QVBoxLayout *cardLayout = new QVBoxLayout(cardWidget);
+    cardLayout->setSpacing(8);
+    cardLayout->setContentsMargins(15, 15, 15, 15);
+
+    QLabel *diffLabel = new QLabel("难度选择", cardWidget);
+    diffLabel->setStyleSheet("font-size: 13px; font-weight: bold; color: #333; background: transparent;");
+    cardLayout->addWidget(diffLabel);
+
+    difficultyCombo = new QComboBox(cardWidget);
     difficultyCombo->addItem("简单", EASY);
     difficultyCombo->addItem("中等", MEDIUM);
     difficultyCombo->addItem("困难", HARD);
-    difficultyCombo->setStyleSheet("font-size: 14px; padding: 5px;");
+    difficultyCombo->setStyleSheet(
+        "QComboBox {"
+        "  font-size: 13px; padding: 6px 10px;"
+        "  border: 1px solid #ccc; border-radius: 6px;"
+        "  background: white; color: #333;"
+        "}"
+        "QComboBox:hover { border-color: #3F51B5; }"
+        "QComboBox::drop-down { border: none; width: 24px; }"
+    );
     difficultyCombo->setCurrentIndex(1);
-    mainLayout->addWidget(difficultyCombo);
+    cardLayout->addWidget(difficultyCombo);
 
-    QLabel *topicLabel = new QLabel("知识点选择:", menuWidget);
-    topicLabel->setStyleSheet("font-size: 14px;");
-    mainLayout->addWidget(topicLabel);
+    QLabel *topicLabel = new QLabel("知识点选择", cardWidget);
+    topicLabel->setStyleSheet("font-size: 13px; font-weight: bold; color: #333; background: transparent;");
+    cardLayout->addWidget(topicLabel);
 
-    topicCombo = new QComboBox(menuWidget);
+    topicCombo = new QComboBox(cardWidget);
     topicCombo->addItem("全部");
     topicCombo->addItem("类与对象基础");
     topicCombo->addItem("继承与多态");
     topicCombo->addItem("运算符重载");
     topicCombo->addItem("STL");
     topicCombo->addItem("文件，模版，c++新特性");
-    topicCombo->setStyleSheet("font-size: 14px; padding: 5px;");
-    mainLayout->addWidget(topicCombo);
+    topicCombo->setStyleSheet(
+        "QComboBox {"
+        "  font-size: 13px; padding: 6px 10px;"
+        "  border: 1px solid #ccc; border-radius: 6px;"
+        "  background: white; color: #333;"
+        "}"
+        "QComboBox:hover { border-color: #3F51B5; }"
+        "QComboBox::drop-down { border: none; width: 24px; }"
+    );
+    cardLayout->addWidget(topicCombo);
+
+    mainLayout->addWidget(cardWidget);
+
     connect(difficultyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::filterQuestions);
     connect(topicCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::filterQuestions);
-    loadQuestionsFromJson();
     filterQuestions();
-    mainLayout->addSpacing(15);
+    mainLayout->addSpacing(8);
 
-    QPushButton *pvpBtn = new QPushButton("双人对战\n(两名玩家轮流落子)", menuWidget);
-    pvpBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #45a049; }");
+    QPushButton *pvpBtn = new QPushButton("开始对战", menuWidget);
+    pvpBtn->setStyleSheet(
+        "QPushButton {"
+        "  font-size: 16px; font-weight: bold; padding: 12px;"
+        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "    stop:0 #4CAF50, stop:1 #388E3C);"
+        "  color: white; border: none; border-radius: 8px;"
+        "}"
+        "QPushButton:hover {"
+        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "    stop:0 #66BB6A, stop:1 #43A047);"
+        "}"
+        "QPushButton:pressed {"
+        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "    stop:0 #388E3C, stop:1 #2E7D32);"
+        "  padding-top: 14px; padding-bottom: 10px;"
+        "}"
+    );
     connect(pvpBtn, SIGNAL(clicked()), this, SLOT(onStartPVPClicked()));
     mainLayout->addWidget(pvpBtn);
 
-
-    QPushButton *exitBtn = new QPushButton("退出", menuWidget);
-    exitBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #f44336; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #da190b; }");
+    QPushButton *exitBtn = new QPushButton("退出游戏", menuWidget);
+    exitBtn->setStyleSheet(
+        "QPushButton {"
+        "  font-size: 14px; padding: 10px;"
+        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "    stop:0 #EF5350, stop:1 #D32F2F);"
+        "  color: white; border: none; border-radius: 8px;"
+        "}"
+        "QPushButton:hover {"
+        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "    stop:0 #E57373, stop:1 #E53935);"
+        "}"
+        "QPushButton:pressed {"
+        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "    stop:0 #D32F2F, stop:1 #C62828);"
+        "  padding-top: 12px; padding-bottom: 8px;"
+        "}"
+    );
     connect(exitBtn, SIGNAL(clicked()), this, SLOT(close()));
     mainLayout->addWidget(exitBtn);
 
@@ -152,9 +227,11 @@ void MainWindow::startGame(GameMode mode)
     if (!game)
         game = new GameModel;
 
-    // 重置游戏状态
     game->startGame();
     wrongPositions.clear();
+    m_winPieces.clear();
+    lastMoveRow = -1;
+    lastMoveCol = -1;
     int boardSize = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
     int skillPanelWidth = 150;
 
@@ -176,7 +253,7 @@ void MainWindow::startGame(GameMode mode)
     auto createPanel = [this, boardSize, skillPanelWidth](int x, bool isPrimary) {
         QWidget *panel = new QWidget(this);
         panel->setGeometry(x, 40, skillPanelWidth, boardSize); // 40 为预留的顶部菜单栏高度
-        panel->setStyleSheet("background-color: #F0F0F0; border: 1px solid #DCDCDC;");
+        panel->setStyleSheet("background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FAFAFA, stop:1 #F0F0F0); border: 1px solid #D0D0D0; border-radius: 4px;");
 
         // 使用垂直布局，让 6 个控件从上到下等间距紧凑排列
         QVBoxLayout *layout = new QVBoxLayout(panel);
@@ -187,59 +264,58 @@ void MainWindow::startGame(GameMode mode)
         controlLayout->setSpacing(5);
 
         QPushButton *restartBtn = new QPushButton("重开", panel);
-        restartBtn->setStyleSheet("QPushButton { background-color: #757575; color: white; font-size: 11px; font-weight: bold; min-height: 28px; border-radius: 4px; } QPushButton:hover { background-color: #616161; } QPushButton:pressed { background-color: #424242; }");
-        connect(restartBtn, SIGNAL(clicked()), this, SLOT(onStartPVPClicked())); // 绑定重新开始
+        restartBtn->setStyleSheet("QPushButton { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #757575, stop:1 #616161); color: white; font-size: 11px; font-weight: bold; min-height: 28px; border-radius: 6px; } QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #9E9E9E, stop:1 #757575); } QPushButton:pressed { background-color: #424242; }");
+        connect(restartBtn, SIGNAL(clicked()), this, SLOT(onStartPVPClicked()));
 
         QPushButton *menuBtn = new QPushButton("主菜单", panel);
-        menuBtn->setStyleSheet("QPushButton { background-color: #757575; color: white; font-size: 11px; font-weight: bold; min-height: 28px; border-radius: 4px; } QPushButton:hover { background-color: #616161; } QPushButton:pressed { background-color: #424242; }");
-        connect(menuBtn, SIGNAL(clicked()), this, SLOT(onBackToMenuClicked()));   // 绑定返回主菜单
+        menuBtn->setStyleSheet("QPushButton { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #757575, stop:1 #616161); color: white; font-size: 11px; font-weight: bold; min-height: 28px; border-radius: 6px; } QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #9E9E9E, stop:1 #757575); } QPushButton:pressed { background-color: #424242; }");
+        connect(menuBtn, SIGNAL(clicked()), this, SLOT(onBackToMenuClicked()));
 
         controlLayout->addWidget(restartBtn);
         controlLayout->addWidget(menuBtn);
         layout->addLayout(controlLayout); // 将控制按钮加入垂直布局的最上方
-        // 1. 定义 5 个技能的名字、消耗以及颜色
         struct SkillInfo {
             QString name;
             int cost;
             QString color;
+            QString hoverColor;
         };
 
         std::vector<SkillInfo> skills = {
-            {"跳过答题\n(消耗 5)", 5, "#9C27B0"}, // 紫色
-            {"强力封锁\n(消耗 4)", 4, "#E91E63"}, // 粉红
-            {"封锁对手\n(消耗 3)", 3, "#F44336"}, // 红色
-            {"置换棋子\n(消耗 2)", 2, "#FF9800"}, // 橙色
-            {"提示答案\n(消耗 1)", 1, "#03A9F4"}  // 蓝色
+            {"跳过答题\n(消耗 5)", 5, "#9C27B0", "#AB47BC"},
+            {"强力封锁\n(消耗 4)", 4, "#E91E63", "#EC407A"},
+            {"封锁对手\n(消耗 3)", 3, "#F44336", "#EF5350"},
+            {"置换棋子\n(消耗 2)", 2, "#FF9800", "#FFA726"},
+            {"提示答案\n(消耗 1)", 1, "#03A9F4", "#29B6F6"}
         };
 
-        // 2. 循环生成前 5 个技能按钮
         for (int i = 0; i < 5; ++i) {
             QPushButton *btn = new QPushButton(skills[i].name, panel);
 
             btn->setStyleSheet(QString(
                                    "QPushButton {"
-                                   "  background-color: %1;"      // 基础颜色
+                                   "  background-color: %1;"
                                    "  color: white;"
                                    "  font-size: 13px;"
                                    "  font-weight: bold;"
                                    "  border: none;"
-                                   "  border-radius: 6px;"
+                                   "  border-radius: 8px;"
                                    "  min-height: 50px;"
+                                   "  padding: 4px;"
                                    "}"
                                    "QPushButton:hover {"
-                                   "  background-color: %1;"
-                                   "  opacity: 0.85;"             // 鼠标悬停时：变淡一点点
+                                   "  background-color: %2;"
                                    "}"
                                    "QPushButton:pressed {"
-                                   "  background-color: #333333;" // 核心修改：鼠标按下时，按钮瞬间变成深灰色
-                                   "  padding-left: 3px;"         // 核心修改：让文字往右下角微调 1 像素，模拟真实的物理下沉按压感
+                                   "  background-color: #424242;"
+                                   "  padding-left: 3px;"
                                    "  padding-top: 3px;"
                                    "}"
                                    "QPushButton:disabled {"
                                    "  background-color: #BDBDBD;"
                                    "  color: #E0E0E0;"
                                    "}"
-                                   ).arg(skills[i].color));
+                                   ).arg(skills[i].color, skills[i].hoverColor));
 
             // 测试专用弹窗连接：点击会直接弹窗提示，百分百保证能点
             connect(btn, &QPushButton::clicked, this, [this, isPrimary, cost = skills[i].cost]() {
@@ -249,21 +325,22 @@ void MainWindow::startGame(GameMode mode)
             layout->addWidget(btn);
         }
 
-        // 3. 创建最下方的能量显示按钮
         QPushButton *energyDisplay = new QPushButton("能量: 0", panel);
         energyDisplay->setFocusPolicy(Qt::NoFocus);
         energyDisplay->setStyleSheet(
             "QPushButton {"
-            "  background-color: #4CAF50;"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 #66BB6A, stop:1 #43A047);"
             "  color: white;"
             "  font-size: 15px;"
             "  font-weight: bold;"
-            "  border: 2px solid #388E3C;"
-            "  border-radius: 6px;"
+            "  border: 2px solid #2E7D32;"
+            "  border-radius: 8px;"
             "  min-height: 55px;"
             "}"
             "QPushButton:hover, QPushButton:pressed {"
-            "  background-color: #4CAF50;"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 #81C784, stop:1 #66BB6A);"
             "}"
             );
 
@@ -327,41 +404,65 @@ void MainWindow::onBackToMenuClicked()
         skillPanel2 = nullptr;
     }
     wrongPositions.clear();
+    m_winPieces.clear();
+    lastMoveRow = -1;
+    lastMoveCol = -1;
     currentMode = MENU_MODE;
-    setFixedSize(400, 380);
+    setFixedSize(440, 480);
     menuBar()->clear();
     menuWidget->show();
 }
 
 void MainWindow::paintEvent(QPaintEvent *event)
 {
-    // 1. 同步能量条显示
     if (game) {
-        if (p1EnergyLabel) {
+        if (p1EnergyLabel)
             p1EnergyLabel->setText(QString("能量: %1").arg(game->p1Energy));
-        }
-        if (p2EnergyLabel) {
+        if (p2EnergyLabel)
             p2EnergyLabel->setText(QString("能量: %1").arg(game->p2Energy));
-        }
     }
     Q_UNUSED(event);
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     if (currentMode == MENU_MODE)
     {
-        painter.fillRect(rect(), QColor(220, 220, 220));
+        QLinearGradient menuGrad(0, 0, 0, height());
+        menuGrad.setColorAt(0.0, QColor(63, 81, 181));
+        menuGrad.setColorAt(0.5, QColor(48, 63, 159));
+        menuGrad.setColorAt(1.0, QColor(26, 35, 126));
+        painter.fillRect(rect(), menuGrad);
         return;
     }
 
-    // 画背景和棋盘格子线
-    painter.fillRect(rect(), QColor(210, 180, 140));
-
     int boardWidth = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
     int boardHeight = boardWidth;
+    int boardLeft = boardOffsetX;
+    int boardTop = 0;
 
-    // 【重要：画格子线前先重置画笔，确保格子线是正常的黑色细线】
-    painter.setPen(QPen(Qt::black, 1));
+    QLinearGradient bgGrad(0, 0, width(), 0);
+    bgGrad.setColorAt(0.0, QColor(220, 220, 220));
+    bgGrad.setColorAt(0.5, QColor(210, 210, 210));
+    bgGrad.setColorAt(1.0, QColor(220, 220, 220));
+    painter.fillRect(rect(), bgGrad);
+
+    painter.fillRect(boardLeft + 4, boardTop + 4, boardWidth, boardHeight, QColor(0, 0, 0, 50));
+
+    QLinearGradient woodGrad(boardLeft, boardTop, boardLeft + boardWidth, boardTop);
+    woodGrad.setColorAt(0.0, QColor(210, 180, 140));
+    woodGrad.setColorAt(0.15, QColor(200, 170, 130));
+    woodGrad.setColorAt(0.3, QColor(215, 185, 145));
+    woodGrad.setColorAt(0.5, QColor(195, 165, 125));
+    woodGrad.setColorAt(0.7, QColor(210, 180, 140));
+    woodGrad.setColorAt(0.85, QColor(190, 160, 120));
+    woodGrad.setColorAt(1.0, QColor(205, 175, 135));
+    painter.fillRect(boardLeft, boardTop, boardWidth, boardHeight, woodGrad);
+
+    painter.setPen(QPen(QColor(100, 70, 40), 2));
+    painter.drawRect(boardLeft, boardTop, boardWidth, boardHeight);
+
+    painter.setPen(QPen(QColor(80, 50, 30), 1));
     for (int i = 0; i <= kBoardSizeNum; i++)
     {
         painter.drawLine(kBoardMargin + kBlockSize * i + boardOffsetX, kBoardMargin,
@@ -370,62 +471,75 @@ void MainWindow::paintEvent(QPaintEvent *event)
                          boardWidth - kBoardMargin + boardOffsetX, kBoardMargin + kBlockSize * i);
     }
 
-    // =================================================================
-    // 解决问题 1：修复鼠标悬停提示颜色不一致
-    // =================================================================
-    QBrush brush;
-    brush.setStyle(Qt::SolidPattern);
-
-    if (clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
-        clickPosCol >= 0 && clickPosCol < kBoardSizeNum &&
-        game && game->gameMapVec[clickPosRow][clickPosCol] == 0)
-    {
-        // ⚠️ 核心修改：如果你是用 !game->playerFlag 或者 game->playerFlag 决定的，
-        // 请确保这里的 if 条件和 actionByPerson 内部放子前的判断完全对齐！
-        // 假设当前谁落子，提示框就是谁的颜色：
-        if (game->playerFlag)
-            brush.setColor(Qt::white); // 白方回合显示白提示
-        else
-            brush.setColor(Qt::black); // 黑方回合显示黑提示
-
-        painter.setBrush(brush);
-        // 重置画笔，防止悬停框带红边
-        painter.setPen(Qt::NoPen);
-
-        painter.drawRect(kBoardMargin + kBlockSize * clickPosCol + kBlockSize / 2 - kMarkSize / 2 + boardOffsetX,
-                         kBoardMargin + kBlockSize * clickPosRow + kBlockSize / 2 - kMarkSize / 2,
-                         kMarkSize, kMarkSize);
+    painter.setBrush(QColor(80, 50, 30));
+    painter.setPen(Qt::NoPen);
+    int stars[] = {3, 7, 11};
+    for (int r : stars) {
+        for (int c : stars) {
+            int sx = kBoardMargin + c * kBlockSize + kBlockSize / 2 + boardOffsetX;
+            int sy = kBoardMargin + r * kBlockSize + kBlockSize / 2;
+            painter.drawEllipse(sx - 4, sy - 4, 8, 8);
+        }
     }
 
-    // =================================================================
-    // 解决问题 2 & 3：遍历棋盘绘制棋子与红叉
-    // =================================================================
+    if (!m_winPieces.empty()) {
+        for (const auto& pos : m_winPieces) {
+            int i = pos.first, j = pos.second;
+            int cx = boardOffsetX + kBoardMargin + j * kBlockSize + (kBlockSize / 2);
+            int cy = kBoardMargin + i * kBlockSize + (kBlockSize / 2);
+            QRadialGradient glow(cx, cy, kRadius * 2);
+            glow.setColorAt(0.0, QColor(255, 215, 0, 180));
+            glow.setColorAt(0.5, QColor(255, 215, 0, 60));
+            glow.setColorAt(1.0, QColor(255, 215, 0, 0));
+            painter.setBrush(glow);
+            painter.setPen(Qt::NoPen);
+            painter.drawEllipse(cx - kRadius * 2, cy - kRadius * 2, kRadius * 4, kRadius * 4);
+        }
+    }
+
     if (game)
     {
         for (int i = 0; i < kBoardSizeNum; i++) {
             for (int j = 0; j < kBoardSizeNum; j++) {
 
-                int centerX = boardOffsetX + kBoardMargin + j * kBlockSize + (kBlockSize / 2);
-                int centerY = kBoardMargin + i * kBlockSize + (kBlockSize / 2);
+                int cx = boardOffsetX + kBoardMargin + j * kBlockSize + (kBlockSize / 2);
+                int cy = kBoardMargin + i * kBlockSize + (kBlockSize / 2);
 
-                if (game->gameMapVec[i][j] == 1) // 白子
+                if (game->gameMapVec[i][j] == 1)
                 {
-                    brush.setColor(Qt::white);
-                    painter.setBrush(brush);
+                    painter.setBrush(QColor(0, 0, 0, 60));
                     painter.setPen(Qt::NoPen);
-                    painter.drawEllipse(centerX - kRadius, centerY - kRadius, kRadius * 2, kRadius * 2);
+                    painter.drawEllipse(cx - kRadius + 2, cy - kRadius + 2, kRadius * 2, kRadius * 2);
+
+                    QRadialGradient wGrad(cx - 4, cy - 4, kRadius);
+                    wGrad.setColorAt(0.0, QColor(255, 255, 255));
+                    wGrad.setColorAt(0.5, QColor(245, 245, 245));
+                    wGrad.setColorAt(1.0, QColor(200, 200, 200));
+                    painter.setBrush(wGrad);
+                    painter.drawEllipse(cx - kRadius, cy - kRadius, kRadius * 2, kRadius * 2);
                 }
-                else if (game->gameMapVec[i][j] == -1) // 黑子
+                else if (game->gameMapVec[i][j] == -1)
                 {
-                    brush.setColor(Qt::black);
-                    painter.setBrush(brush);
+                    painter.setBrush(QColor(0, 0, 0, 80));
                     painter.setPen(Qt::NoPen);
-                    painter.drawEllipse(centerX - kRadius, centerY - kRadius, kRadius * 2, kRadius * 2);
+                    painter.drawEllipse(cx - kRadius + 2, cy - kRadius + 2, kRadius * 2, kRadius * 2);
+
+                    QRadialGradient bGrad(cx - 4, cy - 4, kRadius);
+                    bGrad.setColorAt(0.0, QColor(80, 80, 80));
+                    bGrad.setColorAt(0.5, QColor(40, 40, 40));
+                    bGrad.setColorAt(1.0, QColor(20, 20, 20));
+                    painter.setBrush(bGrad);
+                    painter.drawEllipse(cx - kRadius, cy - kRadius, kRadius * 2, kRadius * 2);
                 }
 
-                // =================================================================
-                // ⚠️ 【核心修改】：检查当前格子 (i, j) 是否在答错的红叉列表里
-                // =================================================================
+                if (i == lastMoveRow && j == lastMoveCol &&
+                    (game->gameMapVec[i][j] == 1 || game->gameMapVec[i][j] == -1))
+                {
+                    painter.setBrush(QColor(255, 60, 60));
+                    painter.setPen(Qt::NoPen);
+                    painter.drawEllipse(cx - 4, cy - 4, 8, 8);
+                }
+
                 bool shouldDrawCross = false;
                 for (const auto& pos : wrongPositions) {
                     if (pos.first == i && pos.second == j) {
@@ -433,45 +547,37 @@ void MainWindow::paintEvent(QPaintEvent *event)
                         break;
                     }
                 }
-
                 if (shouldDrawCross)
                 {
-                    painter.setRenderHint(QPainter::Antialiasing, true);
                     QPen pen(Qt::red);
                     pen.setWidth(3);
                     painter.setPen(pen);
                     painter.setBrush(Qt::NoBrush);
-
                     int r = kBlockSize / 4;
-                    painter.drawLine(centerX - r, centerY - r, centerX + r, centerY + r);
-                    painter.drawLine(centerX + r, centerY - r, centerX - r, centerY + r);
+                    painter.drawLine(cx - r, cy - r, cx + r, cy + r);
+                    painter.drawLine(cx + r, cy - r, cx - r, cy + r);
                 }
             }
         }
 
-        // 游戏输赢判定保持原样...
         if (clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
             clickPosCol >= 0 && clickPosCol < kBoardSizeNum &&
-            (game->gameMapVec[clickPosRow][clickPosCol] == 1 ||
-             game->gameMapVec[clickPosRow][clickPosCol] == -1))
+            game->gameMapVec[clickPosRow][clickPosCol] == 0)
         {
-            if (game->isWin(clickPosRow, clickPosCol) && game->gameStatus == PLAYING)
-            {
-                game->gameStatus = WIN;
-                QString str = (game->gameMapVec[clickPosRow][clickPosCol] == 1) ? "白方" : "黑方";
-                QMessageBox::StandardButton btnValue = QMessageBox::information(this, "胜利", str + " 获胜!");
-                if (btnValue == QMessageBox::Ok) {
-                    QTimer::singleShot(0, this, SLOT(onBackToMenuClicked()));
-                }
-            }
-        }
+            int cx = boardOffsetX + kBoardMargin + clickPosCol * kBlockSize + (kBlockSize / 2);
+            int cy = kBoardMargin + clickPosRow * kBlockSize + (kBlockSize / 2);
 
-        if (game->isDeadGame())
-        {
-            QMessageBox::StandardButton btnValue = QMessageBox::information(this, "平局", "和棋!");
-            if (btnValue == QMessageBox::Ok) {
-                QTimer::singleShot(0, this, SLOT(onBackToMenuClicked()));
+            QRadialGradient hGrad(cx - 4, cy - 4, kRadius);
+            if (game->playerFlag) {
+                hGrad.setColorAt(0.0, QColor(60, 60, 60, 160));
+                hGrad.setColorAt(1.0, QColor(20, 20, 20, 80));
+            } else {
+                hGrad.setColorAt(0.0, QColor(255, 255, 255, 160));
+                hGrad.setColorAt(1.0, QColor(200, 200, 200, 80));
             }
+            painter.setBrush(hGrad);
+            painter.setPen(Qt::NoPen);
+            painter.drawEllipse(cx - kRadius, cy - kRadius, kRadius * 2, kRadius * 2);
         }
     }
 }
@@ -520,9 +626,6 @@ void MainWindow::mouseReleaseEvent(QMouseEvent *event)
 
     if (row < 0 || row >= kBoardSizeNum || col < 0 || col >= kBoardSizeNum) return;
 
-    // =================================================================
-    // ⚠️ 【核心修改】：遍历红叉列表，点中任何一个历史红叉都直接拦截
-    // =================================================================
     for (const auto& pos : wrongPositions) {
         if (row == pos.first && col == pos.second) {
             QMessageBox::warning(this, "已被封锁", "这个格子你刚才已经答错被封锁了！请选其他格子。");
@@ -536,27 +639,45 @@ void MainWindow::mouseReleaseEvent(QMouseEvent *event)
     pendingCol = col;
 
     Question currentQ = getRandomQuestion();
-
     QuestionDialog dlg(currentQ, this);
     dlg.exec();
 
     if (dlg.isCorrect())
     {
-        // 情况 A: 答对了！
         game->actionByPerson(pendingRow, pendingCol);
-
-        // ⚠️ 【核心修改】：既然成功落子进入下一回合，一口气清空本回合所有的红叉记录
+        lastMoveRow = pendingRow;
+        lastMoveCol = pendingCol;
         wrongPositions.clear();
 
-        QMessageBox::information(this, "回答正确", "回答正确，成功落子！并为你积攒了能量。");
         if (game->playerFlag) game->p2Energy += 1; else game->p1Energy += 1;
+
+        if (game->isWin(pendingRow, pendingCol)) {
+            game->gameStatus = WIN;
+            m_winPieces = game->getWinLine(pendingRow, pendingCol);
+            update();
+            QTimer::singleShot(1500, this, [this]() {
+                QString str = (game->gameMapVec[lastMoveRow][lastMoveCol] == 1) ? "白方" : "黑方";
+                QMessageBox::information(this, "胜利", str + " 获胜!");
+                onBackToMenuClicked();
+            });
+            return;
+        }
+
+        if (game->isDeadGame()) {
+            game->gameStatus = DEAD;
+            update();
+            QTimer::singleShot(500, this, [this]() {
+                QMessageBox::information(this, "平局", "和棋!");
+                onBackToMenuClicked();
+            });
+            return;
+        }
+
+        QMessageBox::information(this, "回答正确", "回答正确，成功落子！并为你积攒了能量。");
     }
     else
     {
-        // 情况 B: 答错了！
-        // ⚠️ 【核心修改】：不覆盖旧的，而是把新的答错坐标追加到列表里，让他们并存
         wrongPositions.push_back({pendingRow, pendingCol});
-
         QMessageBox::warning(this, "回答错误", "回答错误！该格子已被你封锁，请换个格子重新尝试。");
     }
 
@@ -611,19 +732,13 @@ void MainWindow::loadQuestionsFromJson()
     }
 }
 
-// 2. 随机抽题函数
 Question MainWindow::getRandomQuestion()
 {
-    // 【边界情况处理】：如果某种难度+某个知识点组合下，一题都没有，怎么办？
     if (m_filteredQuestionBank.isEmpty()) {
-        QMessageBox::warning(this, "题库枯竭", "当前选择的难度和知识点下没有题目！将为您随机抽取其他题目。");
-
-        // 兜底方案：退回到从总题库抽，防止游戏崩溃
         if (!m_questionBank.isEmpty()) {
             int randomIndex = QRandomGenerator::global()->bounded(m_questionBank.size());
             return m_questionBank.at(randomIndex);
         } else {
-            // 最惨的情况：总题库也是空的
             Question fallbackQ;
             fallbackQ.questionText = "题库加载失败或为空？";
             fallbackQ.options = {"A. 是", "B. 否", "C. 也许", "D. 不确定"};
@@ -632,7 +747,6 @@ Question MainWindow::getRandomQuestion()
         }
     }
 
-    // 正常情况：从过滤后的题库中随机抽取
     int randomIndex = QRandomGenerator::global()->bounded(m_filteredQuestionBank.size());
     return m_filteredQuestionBank.at(randomIndex);
 }

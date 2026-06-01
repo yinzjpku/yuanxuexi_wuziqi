@@ -58,11 +58,19 @@ private:
     QList<Question> m_filteredQuestionBank;
     void loadQuestionsFromJson();
     Question getRandomQuestion();
+    void handleAnswerResult(bool isCorrect, bool isTimeout);
+    // ⚠️新增：全局时限系统
+    QTimer *m_globalTimer;
+    int m_p1TimeLeft; // 白方剩余秒数
+    int m_p2TimeLeft; // 黑方剩余秒数
+    void handleGlobalTimeout(); // 处理全局超时
+    bool m_isAnswering;
 private slots:
     void chessOneByPerson();
     void onStartPVPClicked();
     void onBackToMenuClicked();
     void filterQuestions();
+    void onGlobalTimerTick();
 };
 
 #endif // MAINWINDOW_H

@@ -45,11 +45,14 @@ MainWindow::MainWindow(QWidget *parent)
     clickPosRow = -1;
     clickPosCol = -1;
     currentMode = MENU_MODE;
-
+    m_isAnswering = false;
     menuWidget = new QWidget(this);
     menuWidget->setGeometry(0, 0, 400, 380);
     setupMenuMode();
     loadQuestionsFromJson();
+
+    m_globalTimer = new QTimer(this);
+    connect(m_globalTimer, &QTimer::timeout, this, &MainWindow::onGlobalTimerTick);
 }
 
 MainWindow::~MainWindow()
@@ -157,7 +160,9 @@ void MainWindow::startGame(GameMode mode)
     wrongPositions.clear();
     int boardSize = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
     int skillPanelWidth = 150;
-
+    m_p1TimeLeft = 600; // 10分钟
+    m_p2TimeLeft = 600;
+    m_globalTimer->start(1000); // 启动全局倒计时
     // 纯PVP模式：固定左右两侧均有技能面板
     boardOffsetX = skillPanelWidth;
     setFixedSize(boardSize + skillPanelWidth * 2, boardSize + 60);
@@ -205,11 +210,11 @@ void MainWindow::startGame(GameMode mode)
         };
 
         std::vector<SkillInfo> skills = {
-            {"跳过答题\n(消耗 5)", 5, "#9C27B0"}, // 紫色
-            {"强力封锁\n(消耗 4)", 4, "#E91E63"}, // 粉红
-            {"封锁对手\n(消耗 3)", 3, "#F44336"}, // 红色
-            {"置换棋子\n(消耗 2)", 2, "#FF9800"}, // 橙色
-            {"提示答案\n(消耗 1)", 1, "#03A9F4"}  // 蓝色
+            {"跳过答题\n(消耗 4)", 4, "#9C27B0"}, // 紫色
+            {"消除红叉\n(消耗 2)", 2, "#E91E63"}, // 粉红
+            {"排除错项\n(消耗 2)", 2, "#F44336"}, // 红色
+            {"换一道题\n(消耗 1)", 1, "#FF9800"}, // 橙色
+            {"延长10s\n(消耗 1)", 1, "#03A9F4"}  // 蓝色
         };
 
         // 2. 循环生成前 5 个技能按钮
@@ -311,6 +316,7 @@ void MainWindow::onStartPVPClicked()
 
 void MainWindow::onBackToMenuClicked()
 {
+    if (m_globalTimer) m_globalTimer->stop();
     if (game)
     {
         delete game;
@@ -338,10 +344,12 @@ void MainWindow::paintEvent(QPaintEvent *event)
     // 1. 同步能量条显示
     if (game) {
         if (p1EnergyLabel) {
-            p1EnergyLabel->setText(QString("能量: %1").arg(game->p1Energy));
+            QString t1 = QString("%1:%2").arg(m_p1TimeLeft / 60, 2, 10, QChar('0')).arg(m_p1TimeLeft % 60, 2, 10, QChar('0'));
+            p1EnergyLabel->setText(QString("时间: %1\n能量: %2").arg(t1).arg(game->p1Energy));
         }
         if (p2EnergyLabel) {
-            p2EnergyLabel->setText(QString("能量: %1").arg(game->p2Energy));
+            QString t2 = QString("%1:%2").arg(m_p2TimeLeft / 60, 2, 10, QChar('0')).arg(m_p2TimeLeft % 60, 2, 10, QChar('0'));
+            p2EnergyLabel->setText(QString("时间: %1\n能量: %2").arg(t2).arg(game->p2Energy));
         }
     }
     Q_UNUSED(event);
@@ -376,7 +384,7 @@ void MainWindow::paintEvent(QPaintEvent *event)
     QBrush brush;
     brush.setStyle(Qt::SolidPattern);
 
-    if (clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
+    if (!m_isAnswering &&clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
         clickPosCol >= 0 && clickPosCol < kBoardSizeNum &&
         game && game->gameMapVec[clickPosRow][clickPosCol] == 0)
     {
@@ -480,36 +488,50 @@ void MainWindow::mouseMoveEvent(QMouseEvent *event)
 {
     if (!game || currentMode == MENU_MODE) return;
 
-    int x = event->position().x() - boardOffsetX;
-    int y = event->position().y();
+    // 1. 严格定义棋盘的实际像素范围
+    // 起点：棋盘左上角第一个格子
+    int startX = kBoardMargin + boardOffsetX;
+    int startY = kBoardMargin;
+    // 宽度和高度：正好是 15个格子 (kBlockSize * kBoardSizeNum)
+    int boardDrawWidth = kBlockSize * kBoardSizeNum;
+
+    // 这个矩形只覆盖棋盘格子区域，不包含边框间隙
+    QRect boardRect(startX, startY, boardDrawWidth, boardDrawWidth);
+
+    // 2. 答题状态处理
+    if (m_isAnswering) {
+        // 使用 event->pos() 和 boardRect 判断
+        if (boardRect.contains(event->pos())) {
+            setCursor(Qt::ForbiddenCursor);
+        } else {
+            setCursor(Qt::ArrowCursor);
+        }
+        return;
+    }
+
+    // 3. 正常逻辑：恢复正常光标
+    setCursor(Qt::ArrowCursor);
+
+    // 计算鼠标相对于棋盘左上角起点的偏移
+    int relativeX = event->position().x() - startX;
+    int relativeY = event->position().y() - startY;
 
     clickPosRow = -1;
     clickPosCol = -1;
 
-    for (int c = 0; c < kBoardSizeNum; c++)
-    {
-        int cellLeft = kBoardMargin + kBlockSize * c;
-        int cellRight = cellLeft + kBlockSize;
-        if (x >= cellLeft && x < cellRight)
-        {
-            for (int r = 0; r < kBoardSizeNum; r++)
-            {
-                int cellTop = kBoardMargin + kBlockSize * r;
-                int cellBottom = cellTop + kBlockSize;
-                if (y >= cellTop && y < cellBottom)
-                {
-                    clickPosRow = r;
-                    clickPosCol = c;
-                }
-            }
-        }
+    // 只有在棋盘格子内才计算
+    if (relativeX >= 0 && relativeX < boardDrawWidth &&
+        relativeY >= 0 && relativeY < boardDrawWidth) {
+
+        clickPosCol = relativeX / kBlockSize;
+        clickPosRow = relativeY / kBlockSize;
     }
 
     update();
 }
-
 void MainWindow::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_isAnswering) return;
     if (!game || currentMode == MENU_MODE || game->gameStatus != PLAYING) return;
 
     int x = event->position().x() - boardOffsetX;
@@ -536,31 +558,24 @@ void MainWindow::mouseReleaseEvent(QMouseEvent *event)
     pendingCol = col;
 
     Question currentQ = getRandomQuestion();
+    // ⚠️【核心1】准备答题，立刻暂停全局 10 分钟倒计时！
+    m_globalTimer->stop(); // 暂停全局时间
+    m_isAnswering = true;
 
-    QuestionDialog dlg(currentQ, this);
-    dlg.exec();
+    Question testQ = getRandomQuestion();
+    QuestionDialog *dlg = new QuestionDialog(testQ, this); // 使用指针
 
-    if (dlg.isCorrect())
-    {
-        // 情况 A: 答对了！
-        game->actionByPerson(pendingRow, pendingCol);
+    // 连接信号槽，把结果传给 handleAnswerResult
+    connect(dlg, &QuestionDialog::answerFinished, this, &MainWindow::handleAnswerResult);
 
-        // ⚠️ 【核心修改】：既然成功落子进入下一回合，一口气清空本回合所有的红叉记录
-        wrongPositions.clear();
+    // ⚠️ 关键：设为非模态，或者直接 show()，不再阻塞
+    dlg->setAttribute(Qt::WA_DeleteOnClose); // 自动内存回收
+    dlg->show();
 
-        QMessageBox::information(this, "回答正确", "回答正确，成功落子！并为你积攒了能量。");
-        if (game->playerFlag) game->p2Energy += 1; else game->p1Energy += 1;
-    }
-    else
-    {
-        // 情况 B: 答错了！
-        // ⚠️ 【核心修改】：不覆盖旧的，而是把新的答错坐标追加到列表里，让他们并存
-        wrongPositions.push_back({pendingRow, pendingCol});
+    // 设置限时
+    int limit = 20; // 根据难度设置...
+    dlg->setTimeLimit(limit);
 
-        QMessageBox::warning(this, "回答错误", "回答错误！该格子已被你封锁，请换个格子重新尝试。");
-    }
-
-    update();
 }
 
 void MainWindow::chessOneByPerson()
@@ -664,4 +679,59 @@ void MainWindow::filterQuestions()
 
     // 调试信息：看看当前条件下筛选出了多少题
     qDebug() << "筛选完成！当前条件下共有题目数量：" << m_filteredQuestionBank.size();
+}
+void MainWindow::onGlobalTimerTick()
+{
+    if (!game || game->gameStatus != PLAYING) {
+        m_globalTimer->stop();
+        return;
+    }
+    // 假设 playerFlag: true为玩家1(黑), false为玩家2(白)。谁的回合扣谁的时间
+    if (game->playerFlag) {
+        m_p1TimeLeft--;
+        if (m_p1TimeLeft <= 0) handleGlobalTimeout();
+    } else {
+        m_p2TimeLeft--;
+        if (m_p2TimeLeft <= 0) handleGlobalTimeout();
+    }
+    update(); // 触发 paintEvent 刷新界面时间
+}
+
+void MainWindow::handleGlobalTimeout()
+{
+    m_globalTimer->stop();
+    game->gameStatus = WIN;
+    QString winner = game->playerFlag ? "白方" : "黑方"; // 谁的时间耗尽，对手获胜
+    QMessageBox::information(this, "超时结束", QString("时间耗尽！%1 获胜！").arg(winner));
+    QTimer::singleShot(0, this, SLOT(onBackToMenuClicked()));
+}
+void MainWindow::handleAnswerResult(bool isCorrect, bool isTimeout)
+{
+    m_isAnswering = false;
+
+    // 这里放你原来写在 dlg.exec() 后面的那堆结算逻辑
+    if (isCorrect)
+    {
+        game->actionByPerson(pendingRow, pendingCol);
+        wrongPositions.clear();
+        QMessageBox::information(this, "回答正确", "回答正确，成功落子！并为你积攒了能量。");
+        if (game->playerFlag) game->p2Energy += 1; else game->p1Energy += 1;
+    }
+    else
+    {
+        wrongPositions.push_back({pendingRow, pendingCol});
+        // 判断是因为答错，还是因为时间到了
+        if (isTimeout) {
+            QMessageBox::warning(this, "答题超时", "答题时间耗尽！该格子已被你封锁，请重新尝试。");
+        } else {
+            QMessageBox::warning(this, "回答错误", "回答错误！该格子已被你封锁，请重新尝试。");
+        }
+    }
+
+    // ⚠️【核心3】答题结束，恢复全局倒计时！（此时如果落子成功换了手，就会自动开始扣对手的时间）
+    if (game->gameStatus == PLAYING) {
+        m_globalTimer->start(1000);
+    }
+
+    update();
 }

@@ -9,6 +9,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
+#include <QFrame>
 #include <math.h>
 #include "mainwindow.h"
 #include "QuestionDialog.h"
@@ -17,6 +18,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QRandomGenerator>
+#include <QGraphicsDropShadowEffect>
 const int kBoardMargin = 30;
 const int kRadius = 15;
 const int kMarkSize = 6;
@@ -81,60 +83,125 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupMenuMode()
 {
-    menuWidget->setStyleSheet("background-color: rgb(220, 220, 220);");
+    menuWidget->setStyleSheet("background: transparent;");
     QVBoxLayout *mainLayout = new QVBoxLayout(menuWidget);
-    mainLayout->setSpacing(10);
-    mainLayout->setContentsMargins(80, 30, 80, 30);
+    mainLayout->setSpacing(0);
+    mainLayout->setContentsMargins(50, 20, 50, 30);
 
-    QLabel *titleLabel = new QLabel("五子棋编程对战", menuWidget);
+    // --- 标题 ---
+    QLabel *titleLabel = new QLabel("🎮 五子棋编程对战", menuWidget);
     titleLabel->setAlignment(Qt::AlignCenter);
-    QFont titleFont = titleLabel->font();
-    titleFont.setPointSize(22);
-    titleFont.setBold(true);
-    titleLabel->setFont(titleFont);
+    titleLabel->setStyleSheet(R"(
+        QLabel {
+            font-size: 26px;
+            font-weight: bold;
+            color: #FFFFFF;
+            padding: 6px 0 14px 0;
+            background: transparent;
+        }
+    )");
+    QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect();
+    shadow->setBlurRadius(18);
+    shadow->setOffset(3, 3);
+    shadow->setColor(QColor(0, 0, 0, 100));
+    titleLabel->setGraphicsEffect(shadow);
     mainLayout->addWidget(titleLabel);
 
-    QLabel *difficultyLabel = new QLabel("难度选择:", menuWidget);
-    difficultyLabel->setStyleSheet("font-size: 14px;");
-    mainLayout->addWidget(difficultyLabel);
+    // --- 设置卡片 ---
+    QWidget *card = new QWidget(menuWidget);
+    card->setObjectName("menuCard");
+    card->setStyleSheet(R"(
+        QWidget#menuCard {
+            background: rgba(255, 255, 255, 220);
+            border: 1px solid rgba(255,255,255,180);
+            border-radius: 14px;
+        }
+    )");
+    QVBoxLayout *cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(24, 20, 24, 20);
+    cardLayout->setSpacing(10);
 
-    difficultyCombo = new QComboBox(menuWidget);
+    QLabel *difficultyLabel = new QLabel("难度选择", card);
+    difficultyLabel->setStyleSheet("font-size: 13px; font-weight: bold; color: #555; background: transparent;");
+    cardLayout->addWidget(difficultyLabel);
+
+    difficultyCombo = new QComboBox(card);
     difficultyCombo->addItem("简单", EASY);
     difficultyCombo->addItem("中等", MEDIUM);
     difficultyCombo->addItem("困难", HARD);
-    difficultyCombo->setStyleSheet("font-size: 14px; padding: 5px;");
     difficultyCombo->setCurrentIndex(1);
-    mainLayout->addWidget(difficultyCombo);
+    cardLayout->addWidget(difficultyCombo);
 
-    QLabel *topicLabel = new QLabel("知识点选择:", menuWidget);
-    topicLabel->setStyleSheet("font-size: 14px;");
-    mainLayout->addWidget(topicLabel);
+    QLabel *topicLabel = new QLabel("知识点选择", card);
+    topicLabel->setStyleSheet("font-size: 13px; font-weight: bold; color: #555; background: transparent;");
+    cardLayout->addWidget(topicLabel);
 
-    topicCombo = new QComboBox(menuWidget);
+    topicCombo = new QComboBox(card);
     topicCombo->addItem("全部");
     topicCombo->addItem("类与对象基础");
     topicCombo->addItem("继承与多态");
     topicCombo->addItem("运算符重载");
     topicCombo->addItem("STL");
     topicCombo->addItem("文件，模版，c++新特性");
-    topicCombo->setStyleSheet("font-size: 14px; padding: 5px;");
-    mainLayout->addWidget(topicCombo);
+    cardLayout->addWidget(topicCombo);
+
     connect(difficultyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::filterQuestions);
     connect(topicCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::filterQuestions);
     loadQuestionsFromJson();
     filterQuestions();
-    mainLayout->addSpacing(15);
+    mainLayout->addWidget(card);
+    mainLayout->addSpacing(14);
 
-    QPushButton *pvpBtn = new QPushButton("双人对战\n(两名玩家轮流落子)", menuWidget);
-    pvpBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #45a049; }");
+    // --- 开始按钮 ---
+    QPushButton *pvpBtn = new QPushButton("🎯  开始对战", menuWidget);
+    pvpBtn->setCursor(Qt::PointingHandCursor);
+    pvpBtn->setStyleSheet(R"(
+        QPushButton {
+            font-size: 17px;
+            font-weight: bold;
+            padding: 14px;
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                stop:0 #4CAF50, stop:1 #45a049);
+            color: white;
+            border: none;
+            border-radius: 10px;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                stop:0 #66BB6A, stop:1 #4CAF50);
+        }
+        QPushButton:pressed {
+            padding-top: 16px;
+            padding-left: 4px;
+        }
+    )");
     connect(pvpBtn, SIGNAL(clicked()), this, SLOT(onStartPVPClicked()));
     mainLayout->addWidget(pvpBtn);
 
-
-    QPushButton *exitBtn = new QPushButton("退出", menuWidget);
-    exitBtn->setStyleSheet("QPushButton { font-size: 14px; padding: 10px; background-color: #f44336; color: white; border: none; border-radius: 5px; } QPushButton:hover { background-color: #da190b; }");
+    // --- 退出按钮 ---
+    QPushButton *exitBtn = new QPushButton("✕  退出", menuWidget);
+    exitBtn->setCursor(Qt::PointingHandCursor);
+    exitBtn->setStyleSheet(R"(
+        QPushButton {
+            font-size: 14px;
+            padding: 10px;
+            background: transparent;
+            color: rgba(255,255,255,180);
+            border: 1px solid rgba(255,255,255,100);
+            border-radius: 8px;
+        }
+        QPushButton:hover {
+            background: rgba(255,255,255,30);
+            color: white;
+            border-color: rgba(255,255,255,200);
+        }
+        QPushButton:pressed {
+            padding-top: 12px;
+            padding-left: 2px;
+        }
+    )");
     connect(exitBtn, SIGNAL(clicked()), this, SLOT(close()));
     mainLayout->addWidget(exitBtn);
 
@@ -185,71 +252,122 @@ void MainWindow::startGame(GameMode mode)
     // ================== 2. 定义 createPanel (必须在使用前定义) ==================
     auto createPanel = [this, boardSize, skillPanelWidth](int x, bool isPrimary) {
         QWidget *panel = new QWidget(this);
-        panel->setGeometry(x, 40, skillPanelWidth, boardSize); // 40 为预留的顶部菜单栏高度
-        panel->setStyleSheet("background-color: #F0F0F0; border: 1px solid #DCDCDC;");
+        panel->setGeometry(x, 40, skillPanelWidth, boardSize);
+        panel->setObjectName(isPrimary ? "panelP1" : "panelP2");
+        panel->setStyleSheet(R"(
+            QWidget#panelP1, QWidget#panelP2 {
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                    stop:0 #FAFAFA, stop:1 #F0F0F0);
+                border: 1px solid #DCDCDC;
+                border-radius: 6px;
+            }
+        )");
 
-        // 使用垂直布局，让 6 个控件从上到下等间距紧凑排列
         QVBoxLayout *layout = new QVBoxLayout(panel);
-        layout->setContentsMargins(10, 15, 10, 15);
-        layout->setSpacing(12); // 按钮之间的间距
-        // 【新增：系统控制按钮区域 - 放在最顶部】
+        layout->setContentsMargins(8, 10, 8, 12);
+        layout->setSpacing(8);
+
+        // --- 玩家标识 ---
+        QLabel *playerLabel = new QLabel(isPrimary ? "⚫ 黑方" : "⚪ 白方", panel);
+        playerLabel->setAlignment(Qt::AlignCenter);
+        playerLabel->setStyleSheet(R"(
+            QLabel {
+                font-size: 15px;
+                font-weight: bold;
+                color: #444;
+                padding: 4px 0;
+                background: transparent;
+            }
+        )");
+        layout->addWidget(playerLabel);
+
+        // --- 控制按钮 ---
         QHBoxLayout *controlLayout = new QHBoxLayout();
-        controlLayout->setSpacing(5);
+        controlLayout->setSpacing(4);
 
-        QPushButton *restartBtn = new QPushButton("重开", panel);
-        restartBtn->setStyleSheet("QPushButton { background-color: #757575; color: white; font-size: 11px; font-weight: bold; min-height: 28px; border-radius: 4px; } QPushButton:hover { background-color: #616161; } QPushButton:pressed { background-color: #424242; }");
-        connect(restartBtn, SIGNAL(clicked()), this, SLOT(onStartPVPClicked())); // 绑定重新开始
+        QString ctrlStyle = R"(
+            QPushButton {
+                background-color: #757575;
+                color: white;
+                font-size: 11px;
+                font-weight: bold;
+                min-height: 26px;
+                border-radius: 5px;
+                padding: 0 6px;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+            QPushButton:pressed {
+                background-color: #424242;
+                padding-top: 2px;
+                padding-left: 2px;
+            }
+        )";
 
-        QPushButton *menuBtn = new QPushButton("主菜单", panel);
-        menuBtn->setStyleSheet("QPushButton { background-color: #757575; color: white; font-size: 11px; font-weight: bold; min-height: 28px; border-radius: 4px; } QPushButton:hover { background-color: #616161; } QPushButton:pressed { background-color: #424242; }");
-        connect(menuBtn, SIGNAL(clicked()), this, SLOT(onBackToMenuClicked()));   // 绑定返回主菜单
+        QPushButton *restartBtn = new QPushButton("⟳ 重开", panel);
+        restartBtn->setStyleSheet(ctrlStyle);
+        connect(restartBtn, SIGNAL(clicked()), this, SLOT(onStartPVPClicked()));
+
+        QPushButton *menuBtn = new QPushButton("☰ 菜单", panel);
+        menuBtn->setStyleSheet(ctrlStyle);
+        connect(menuBtn, SIGNAL(clicked()), this, SLOT(onBackToMenuClicked()));
 
         controlLayout->addWidget(restartBtn);
         controlLayout->addWidget(menuBtn);
-        layout->addLayout(controlLayout); // 将控制按钮加入垂直布局的最上方
-        // 1. 定义 5 个技能的名字、消耗以及颜色
+        layout->addLayout(controlLayout);
+
+        // --- 分隔线 ---
+        QFrame *line = new QFrame(panel);
+        line->setFrameShape(QFrame::HLine);
+        line->setStyleSheet("color: #E0E0E0; background: transparent;");
+        layout->addWidget(line);
+
+        // --- 技能 ---
         struct SkillInfo {
+            QString icon;
             QString name;
             int cost;
             QString color;
         };
 
         std::vector<SkillInfo> skills = {
-            {"跳过答题\n(消耗 4)", 4, "#9C27B0"}, // 紫色
-            {"消除红叉\n(消耗 2)", 2, "#E91E63"}, // 粉红
-            {"排除错项\n(消耗 2)", 2, "#F44336"}, // 红色
-            {"换一道题\n(消耗 1)", 1, "#FF9800"}, // 橙色
-            {"延长10s\n(消耗 1)", 1, "#03A9F4"}  // 蓝色
+            {"⏭", "跳过答题", 4, "#9C27B0"},
+            {"❌", "消除红叉", 2, "#E91E63"},
+            {"✨", "排除错项", 2, "#F44336"},
+            {"🔄", "换一道题", 1, "#FF9800"},
+            {"⏱", "延长10s", 1, "#03A9F4"}
         };
 
-        // 2. 循环生成前 5 个技能按钮
         for (int i = 0; i < 5; ++i) {
-            QPushButton *btn = new QPushButton(skills[i].name, panel);
+            QString text = skills[i].icon + " " + skills[i].name + "\n(消耗 " + QString::number(skills[i].cost) + ")";
+            QPushButton *btn = new QPushButton(text, panel);
 
             btn->setStyleSheet(QString(
-                                   "QPushButton {"
-                                   "  background-color: %1;"      // 基础颜色
-                                   "  color: white;"
-                                   "  font-size: 13px;"
-                                   "  font-weight: bold;"
-                                   "  border: none;"
-                                   "  border-radius: 6px;"
-                                   "  min-height: 50px;"
-                                   "}"
-                                   "QPushButton:hover {"
-                                   "  background-color: %1;"
-                                   "  opacity: 0.85;"             // 鼠标悬停时：变淡一点点
-                                   "}"
-                                   "QPushButton:pressed {"
-                                   "  background-color: #333333;" // 核心修改：鼠标按下时，按钮瞬间变成深灰色
-                                   "  padding-left: 3px;"         // 核心修改：让文字往右下角微调 1 像素，模拟真实的物理下沉按压感
-                                   "  padding-top: 3px;"
-                                   "}"
-                                   "QPushButton:disabled {"
-                                   "  background-color: #BDBDBD;"
-                                   "  color: #E0E0E0;"
-                                   "}"
-                                   ).arg(skills[i].color));
+                "QPushButton {"
+                "  background-color: %1;"
+                "  color: white;"
+                "  font-size: 12px;"
+                "  font-weight: bold;"
+                "  border: none;"
+                "  border-radius: 8px;"
+                "  min-height: 48px;"
+                "  padding: 4px 6px;"
+                "}"
+                "QPushButton:hover {"
+                "  background-color: %1;"
+                "  opacity: 0.85;"
+                "}"
+                "QPushButton:pressed {"
+                "  background-color: #333333;"
+                "  padding-left: 8px;"
+                "  padding-top: 6px;"
+                "}"
+                "QPushButton:disabled {"
+                "  background-color: #D0D0D0;"
+                "  color: #F0F0F0;"
+                "}"
+            ).arg(skills[i].color));
 
             connect(btn, &QPushButton::clicked, this, [this, isPrimary, i]() {
 
@@ -359,24 +477,28 @@ void MainWindow::startGame(GameMode mode)
             layout->addWidget(btn);
         }
 
-        // 3. 创建最下方的能量显示按钮
-        QPushButton *energyDisplay = new QPushButton("能量: 0", panel);
+        // 3. 底部时间/能量面板
+        QPushButton *energyDisplay = new QPushButton("⏱ 00:00\n⚡ 能量: 0", panel);
         energyDisplay->setFocusPolicy(Qt::NoFocus);
-        energyDisplay->setStyleSheet(
-            "QPushButton {"
-            "  background-color: #4CAF50;"
-            "  color: white;"
-            "  font-size: 15px;"
-            "  font-weight: bold;"
-            "  border: 2px solid #388E3C;"
-            "  border-radius: 6px;"
-            "  min-height: 55px;"
-            "}"
-            "QPushButton:hover, QPushButton:pressed {"
-            "  background-color: #4CAF50;"
-            "}"
-            );
+        energyDisplay->setStyleSheet(R"(
+            QPushButton {
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                    stop:0 #546E7A, stop:1 #455A64);
+                color: white;
+                font-size: 13px;
+                font-weight: bold;
+                border: none;
+                border-radius: 8px;
+                min-height: 58px;
+                padding: 4px;
+            }
+            QPushButton:hover, QPushButton:pressed {
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                    stop:0 #607D8B, stop:1 #546E7A);
+            }
+        )");
 
+        layout->addSpacing(4);
         layout->addWidget(energyDisplay);
 
         if (isPrimary) {
@@ -386,7 +508,7 @@ void MainWindow::startGame(GameMode mode)
         }
 
         return panel;
-    }; // Lambda 定义结束
+    };
 
     // ================== 3. 实例化并显示新面板 ==================
     skillPanel  = createPanel(0, true);                      // 左侧玩家1
@@ -459,11 +581,11 @@ void MainWindow::paintEvent(QPaintEvent *event)
     if (game) {
         if (p1EnergyLabel) {
             QString t1 = QString("%1:%2").arg(m_p1TimeLeft / 60, 2, 10, QChar('0')).arg(m_p1TimeLeft % 60, 2, 10, QChar('0'));
-            p1EnergyLabel->setText(QString("时间: %1\n能量: %2").arg(t1).arg(game->p1Energy));
+            p1EnergyLabel->setText(QString("⏱ %1\n⚡ 能量: %2").arg(t1).arg(game->p1Energy));
         }
         if (p2EnergyLabel) {
             QString t2 = QString("%1:%2").arg(m_p2TimeLeft / 60, 2, 10, QChar('0')).arg(m_p2TimeLeft % 60, 2, 10, QChar('0'));
-            p2EnergyLabel->setText(QString("时间: %1\n能量: %2").arg(t2).arg(game->p2Energy));
+            p2EnergyLabel->setText(QString("⏱ %1\n⚡ 能量: %2").arg(t2).arg(game->p2Energy));
         }
     }
     Q_UNUSED(event);
@@ -472,7 +594,11 @@ void MainWindow::paintEvent(QPaintEvent *event)
 
     if (currentMode == MENU_MODE)
     {
-        painter.fillRect(rect(), QColor(220, 220, 220));
+        QLinearGradient menuGrad(0, 0, 0, height());
+        menuGrad.setColorAt(0, QColor(55, 55, 75));
+        menuGrad.setColorAt(0.5, QColor(65, 55, 70));
+        menuGrad.setColorAt(1, QColor(40, 40, 55));
+        painter.fillRect(rect(), menuGrad);
         return;
     }
 
@@ -528,9 +654,9 @@ void MainWindow::paintEvent(QPaintEvent *event)
         int hy = kBoardMargin + clickPosRow * kBlockSize + kBlockSize / 2;
 
         if (game->playerFlag)
-            painter.setBrush(QColor(255, 255, 255, 100));
-        else
             painter.setBrush(QColor(0, 0, 0, 80));
+        else
+            painter.setBrush(QColor(255, 255, 255, 100));
 
         painter.setPen(Qt::NoPen);
         painter.drawEllipse(hx - kRadius, hy - kRadius, kRadius * 2, kRadius * 2);

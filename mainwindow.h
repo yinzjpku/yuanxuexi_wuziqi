@@ -37,7 +37,8 @@ private:
     int clickPosRow, clickPosCol;
     GameMode currentMode;
     Difficulty difficulty;
-
+    bool m_isEliminatingCross = false;
+    bool m_isSkippingQuestion = false; // ⚠️【新增】是否处于跳过答题的预备状态
     QWidget *menuWidget;
     QWidget *gameWidget;
     QComboBox *difficultyCombo;
@@ -65,6 +66,7 @@ private:
     int m_p2TimeLeft; // 黑方剩余秒数
     void handleGlobalTimeout(); // 处理全局超时
     bool m_isAnswering;
+    QuestionDialog *m_currentDlg = nullptr; // 记录当前弹出的答题窗口
 private slots:
     void chessOneByPerson();
     void onStartPVPClicked();

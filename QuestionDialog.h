@@ -27,6 +27,12 @@ public:
     bool isCorrect() const { return m_isCorrect; }
     void setTimeLimit(int seconds);
     bool isTimeout() const { return m_isTimeout; }
+    void addTime(int secs) ;
+    void forceAllowClose() { m_allowClose = true; }
+    void excludeWrongOption();
+protected:
+    void closeEvent(QCloseEvent *event) override;
+    void reject() override; // 拦截 Esc 键和右上角 X
     // 在 QuestionDialog 类中增加 signals
 signals:
     void answerFinished(bool isCorrect, bool isTimeout); // 答题结束信号
@@ -40,6 +46,8 @@ private:
     QTimer *m_timer;
     int m_timeLeft;
     bool m_isTimeout;
+    bool m_allowClose = false;
+    QList<QPushButton*> m_optionButtons;
 };
 
 #endif // QUESTIONDIALOG_H

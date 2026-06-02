@@ -158,6 +158,11 @@ void MainWindow::startGame(GameMode mode)
     // 重置游戏状态
     game->startGame();
     wrongPositions.clear();
+    // ⚠️【核心修复】：新游戏开始，彻底解除答题状态和恢复正常光标
+    m_isAnswering = false;
+    setCursor(Qt::ArrowCursor);
+    m_currentDlg = nullptr;
+    m_isSkippingQuestion = false;
     int boardSize = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
     int skillPanelWidth = 150;
     m_p1TimeLeft = 600; // 10分钟
@@ -246,9 +251,109 @@ void MainWindow::startGame(GameMode mode)
                                    "}"
                                    ).arg(skills[i].color));
 
-            // 测试专用弹窗连接：点击会直接弹窗提示，百分百保证能点
-            connect(btn, &QPushButton::clicked, this, [this, isPrimary, cost = skills[i].cost]() {
-                  return;
+            connect(btn, &QPushButton::clicked, this, [this, isPrimary, i]() {
+
+                // 判断当前点技能的是不是正在思考的玩家 (假设 game->playerFlag true 为黑, false 为白)
+                // 必须是当前回合玩家才能用自己的能量
+                bool isCurrentTurn = (game->playerFlag == isPrimary);
+                if (!isCurrentTurn) return;
+
+                // 检查能量
+                int& currentEnergy = isPrimary ? game->p1Energy : game->p2Energy;
+                if (i == 1) {
+                    if (m_isAnswering) return; // 答题阶段不可触发
+
+                    if (currentEnergy < 2) {
+                        QMessageBox::warning(this, "提示", "能量不足！消除红叉需要 2 能量。");
+                        return;
+                    }
+                    if (wrongPositions.empty()) {
+                        QMessageBox::warning(this, "提示", "棋盘上目前没有红叉可消！");
+                        return;
+                    }
+
+                    m_isEliminatingCross = true;
+                    setCursor(Qt::CrossCursor);
+                    return; // 进入模式后直接返回，等待玩家点击棋盘
+                }
+                if (i == 0) {
+                    if (m_isAnswering) return; // 如果已经弹窗答题了，不可触发
+
+                    if (currentEnergy < 4) {
+                        QMessageBox::warning(this, "提示", "能量不足！跳过答题需要 4 能量。");
+                        return;
+                    }
+
+                    // 如果开启了消除红叉模式，先关闭它
+                    m_isEliminatingCross = false;
+
+                    // 激活跳过答题状态
+                    m_isSkippingQuestion = true;
+
+                    // 改变光标样式（比如换成等待点击的手型或十字，这里用 SizeAllCursor 或 CrossCursor 提示都行）
+                    setCursor(Qt::PointingHandCursor);
+
+                    QMessageBox::information(this, "技能激活", "已进入【跳过答题】落子模式！请直接点击棋盘上任意合法格子，将免答题直接落子。");
+                    return; // 进入模式，直接返回，等待点击棋盘
+                }
+                if (!m_isAnswering || !m_currentDlg) return;
+                if (i == 4) { // 对应 "延长10s" 按钮
+                    currentEnergy -= 1; // 扣除能量
+                    if (currentEnergy < 1) {
+                        QMessageBox::warning(this, "提示", "能量不足！");
+                        return;
+                    }
+                    m_currentDlg->addTime(10);
+
+                    update(); // 刷新能量条显示
+                }
+                else if (i == 2) {
+                    if (currentEnergy < 2) { // 👈 注意：这个技能消耗 2 能量
+                        QMessageBox::warning(this, "提示", "能量不足！排除错项需要 2 能量。");
+                        return;
+                    }
+                    currentEnergy -= 2;                  // 1. 扣除 2 能量
+                    m_currentDlg->excludeWrongOption(); // 2. 通知弹窗去掉一个错项
+                    update();
+                }
+                else if (i == 3) {
+                    if (currentEnergy < 1) {
+                        QMessageBox::warning(this, "提示", "能量不足！");
+                        return;
+                    }
+                    currentEnergy -= 1; // 扣除能量
+
+                    // 1. 极其关键：断开所有信号，防止触发 handleAnswerResult 去落子或封锁格子！
+                    m_currentDlg->disconnect();
+                    m_currentDlg->forceAllowClose();
+                    // 2. 绕过硬核防直接关闭机制：允许它关闭
+                    // 注意：如果你上一轮写了 m_allowClose 变量，记得在外部调用或者提供公开方法。
+                    // 因为已经在上面断开连接了，所以更暴力的做法是直接强行把它 delete 掉：
+                    m_currentDlg->close();
+                    m_currentDlg = nullptr;
+
+                    // 3. 悄悄洗掉答题锁定状态，允许重呼弹窗
+                    m_isAnswering = false;
+
+                    // 4. 利用原本保存在 pendingRow 和 pendingCol 的坐标，重新拉起一个新题目弹窗！
+                    // 这一段逻辑直接复用 mouseReleaseEvent 里的创建代码：
+                    m_isAnswering = true; // 重新锁定状态
+
+                    Question testQ = getRandomQuestion();
+                    m_currentDlg = new QuestionDialog(testQ, this);
+
+                    // 绑定同样的结算信号槽
+                    connect(m_currentDlg, &QuestionDialog::answerFinished, this, &MainWindow::handleAnswerResult);
+
+                    m_currentDlg->setAttribute(Qt::WA_DeleteOnClose);
+                    m_currentDlg->show();
+
+                    // 为新题目设置时间限制（比如 20 秒）
+                    int limit = 20;
+                    m_currentDlg->setTimeLimit(limit);
+
+                    update(); // 刷新主界面上的能量和UI显示
+                }
             });
 
             layout->addWidget(btn);
@@ -317,6 +422,15 @@ void MainWindow::onStartPVPClicked()
 void MainWindow::onBackToMenuClicked()
 {
     if (m_globalTimer) m_globalTimer->stop();
+    // ⚠️【核心修复】：返回主菜单时，强制关闭未答完的弹窗并复位
+    if (m_currentDlg) {
+        // 先断开所有连接，防止触发 finished 槽引发二次调用
+        m_currentDlg->disconnect();
+        m_currentDlg->close();
+        m_currentDlg = nullptr;
+    }
+    m_isAnswering = false;
+    setCursor(Qt::ArrowCursor); // 恢复正常光标
     if (game)
     {
         delete game;
@@ -531,6 +645,91 @@ void MainWindow::mouseMoveEvent(QMouseEvent *event)
 }
 void MainWindow::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_isEliminatingCross) {
+        int x = event->position().x() - boardOffsetX;
+        int y = event->position().y();
+
+        int row = (y - kBoardMargin) / kBlockSize;
+        int col = (x - kBoardMargin) / kBlockSize;
+
+        // 如果点到了棋盘外面，直接无视
+        if (row < 0 || row >= kBoardSizeNum || col < 0 || col >= kBoardSizeNum) return;
+
+        // 检查点击的格子是不是红叉
+        bool clickedOnCross = false;
+        int crossIndex = -1;
+        for (int i = 0; i < wrongPositions.size(); ++i) {
+            if (wrongPositions[i].first == row && wrongPositions[i].second == col) {
+                clickedOnCross = true;
+                crossIndex = i;
+                break;
+            }
+        }
+
+        if (clickedOnCross) {
+            // 1. 的确是红叉！将其从封锁列表中彻底移除
+            wrongPositions.erase(wrongPositions.begin() + crossIndex);
+
+            // 2. 扣除当前回合玩家的 2 点能量
+            if (game->playerFlag) {
+                game->p1Energy -= 2; // P1(黑方)的回合
+            } else {
+                game->p2Energy -= 2; // P2(白方)的回合
+            }
+
+            // 3. 退出消除模式，恢复正常光标并更新界面
+            m_isEliminatingCross = false;
+            setCursor(Qt::ArrowCursor);
+
+            QMessageBox::information(this, "技能成功", "成功消除该格子的封锁！现在可以重新选择此格子了。");
+            update(); // 触发重绘，红叉消失
+        } else {
+            // 点击了非红叉区域：根据你的期望“无事发生”，保持消除模式，等待下次点击
+        }
+        return; // ⚠️ 极其关键：消除红叉处理完后直接截断，不允许往下走落子答题流程！
+    }
+    if (m_isSkippingQuestion) {
+        int x = event->position().x() - boardOffsetX;
+        int y = event->position().y();
+
+        int row = (y - kBoardMargin) / kBlockSize;
+        int col = (x - kBoardMargin) / kBlockSize;
+
+        // 1. 点到棋盘外，无事发生
+        if (row < 0 || row >= kBoardSizeNum || col < 0 || col >= kBoardSizeNum) return;
+
+        // 2. 如果点到了红叉封锁区域，提示并拦截
+        for (const auto& pos : wrongPositions) {
+            if (row == pos.first && col == pos.second) {
+                QMessageBox::warning(this, "已被封锁", "该格子已被红叉封锁！即使跳过答题也不能下在这里。");
+                return;
+            }
+        }
+
+        // 3. 检查棋规落子合法性（是否有子）
+        if (!game->isValidMove(row, col)) return;
+
+        // 4. 条件全部满足，开始结算：
+        pendingRow = row;
+        pendingCol = col;
+
+        // 扣除当前回合玩家的 4 点能量
+        if (game->playerFlag) {
+            game->p1Energy -= 4; // P1回合
+        } else {
+            game->p2Energy -= 4; // P2回合
+        }
+
+        // 退出技能模式，恢复正常箭头光标
+        m_isSkippingQuestion = false;
+        setCursor(Qt::ArrowCursor);
+
+        // 5. Direct Call！绕过创建弹窗，直接调用结算落子函数，强行落子成功
+        // 传入 (true, false) 代表答题正确，且未超时
+        handleAnswerResult(true, false);
+
+        return; // ⚠️ 极其关键：拦截后续正常的普通点击弹窗流程！
+    }
     if (m_isAnswering) return;
     if (!game || currentMode == MENU_MODE || game->gameStatus != PLAYING) return;
 
@@ -542,9 +741,7 @@ void MainWindow::mouseReleaseEvent(QMouseEvent *event)
 
     if (row < 0 || row >= kBoardSizeNum || col < 0 || col >= kBoardSizeNum) return;
 
-    // =================================================================
-    // ⚠️ 【核心修改】：遍历红叉列表，点中任何一个历史红叉都直接拦截
-    // =================================================================
+    // 遍历红叉列表，点中任何一个历史红叉都直接拦截
     for (const auto& pos : wrongPositions) {
         if (row == pos.first && col == pos.second) {
             QMessageBox::warning(this, "已被封锁", "这个格子你刚才已经答错被封锁了！请选其他格子。");
@@ -557,25 +754,24 @@ void MainWindow::mouseReleaseEvent(QMouseEvent *event)
     pendingRow = row;
     pendingCol = col;
 
-    Question currentQ = getRandomQuestion();
-    // ⚠️【核心1】准备答题，立刻暂停全局 10 分钟倒计时！
-    m_globalTimer->stop(); // 暂停全局时间
+    // 准备答题，立刻暂停全局倒计时
+    m_globalTimer->stop();
     m_isAnswering = true;
 
     Question testQ = getRandomQuestion();
-    QuestionDialog *dlg = new QuestionDialog(testQ, this); // 使用指针
 
-    // 连接信号槽，把结果传给 handleAnswerResult
-    connect(dlg, &QuestionDialog::answerFinished, this, &MainWindow::handleAnswerResult);
+    // ⚠️【核心修复】：只允许 new 一次！让全局指针指向它
+    m_currentDlg = new QuestionDialog(testQ, this);
 
-    // ⚠️ 关键：设为非模态，或者直接 show()，不再阻塞
-    dlg->setAttribute(Qt::WA_DeleteOnClose); // 自动内存回收
-    dlg->show();
+    // 连接信号槽，把结果传给 handleAnswerResult（统一使用 m_currentDlg）
+    connect(m_currentDlg, &QuestionDialog::answerFinished, this, &MainWindow::handleAnswerResult);
+
+    m_currentDlg->setAttribute(Qt::WA_DeleteOnClose);
+    m_currentDlg->show();
 
     // 设置限时
     int limit = 20; // 根据难度设置...
-    dlg->setTimeLimit(limit);
-
+    m_currentDlg->setTimeLimit(limit);
 }
 
 void MainWindow::chessOneByPerson()
@@ -732,6 +928,6 @@ void MainWindow::handleAnswerResult(bool isCorrect, bool isTimeout)
     if (game->gameStatus == PLAYING) {
         m_globalTimer->start(1000);
     }
-
+    m_currentDlg = nullptr;
     update();
 }

@@ -8,6 +8,7 @@
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include <QProgressBar>
 // 彻底断绝外部包含，直接在这里定义结构体
 struct Question {
     int id;
@@ -42,12 +43,12 @@ private slots:
 private:
     Question m_question;
     bool m_isCorrect;
-    // ⚠️新增：限时相关的变量
     QTimer *m_timer;
     int m_timeLeft;
     bool m_isTimeout;
     bool m_allowClose = false;
     QList<QPushButton*> m_optionButtons;
+    QProgressBar *m_progressBar;
 };
 
 #endif // QUESTIONDIALOG_H

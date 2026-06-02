@@ -1,61 +1,117 @@
 #include "QuestionDialog.h"
 #include <QCloseEvent>
 #include <QRandomGenerator>
+#include <QProgressBar>
 QuestionDialog::QuestionDialog(const Question &q, QWidget *parent)
     : QDialog(parent), m_question(q), m_isCorrect(false), m_isTimeout(false), m_timeLeft(0)
 {
     setWindowTitle("请答题以完成落子！");
-    setFixedSize(400, 300);
+    setFixedSize(440, 360);
+    setStyleSheet(R"(
+        QDialog#questionDlg {
+            background-color: #F5F0E8;
+        }
+        QLabel#questionLabel {
+            font-size: 15px;
+            color: #2C2C2C;
+            padding: 14px 18px;
+            background: white;
+            border: 1px solid #E0D5C0;
+            border-radius: 8px;
+            min-height: 50px;
+        }
+    )");
+    setObjectName("questionDlg");
 
     QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(18, 14, 18, 18);
+    layout->setSpacing(10);
+
+    // 倒计时进度条
+    m_progressBar = new QProgressBar(this);
+    m_progressBar->setRange(0, 20);
+    m_progressBar->setValue(20);
+    m_progressBar->setFormat("剩余 %v 秒");
+    layout->addWidget(m_progressBar);
+
+    // 题目文本（卡片容器）
     QLabel *qLabel = new QLabel(m_question.questionText, this);
+    qLabel->setObjectName("questionLabel");
     qLabel->setWordWrap(true);
     layout->addWidget(qLabel);
 
-    // ⚠️新增：初始化单题定时器，但先不启动
+    layout->addSpacing(4);
+
+    // 初始化单题定时器
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &QuestionDialog::onTimerTick);
 
     for (int i = 0; i < m_question.options.size(); ++i) {
         QPushButton *btn = new QPushButton(m_question.options[i], this);
+        btn->setStyleSheet(R"(
+            QPushButton {
+                background-color: white;
+                color: #333;
+                font-size: 14px;
+                padding: 10px 18px;
+                border: 2px solid #D4C5A0;
+                border-radius: 8px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #E8F0FE;
+                border-color: #4A90D9;
+            }
+            QPushButton:pressed {
+                background-color: #D0E0F0;
+                padding-left: 14px;
+                padding-top: 12px;
+            }
+            QPushButton:disabled {
+                background-color: #F5F5F5;
+                color: #B0B0B0;
+                border-color: #E0E0E0;
+            }
+        )");
         layout->addWidget(btn);
         m_optionButtons.append(btn);
         QObject::connect(btn, &QPushButton::clicked, this, [this, i]() {
             m_timer->stop();
             bool correct = (i == m_question.correctAnswer);
-            emit answerFinished(correct, false); // 发送信号
+            emit answerFinished(correct, false);
             m_allowClose = true;
-            this->close(); // 关闭弹窗
+            this->close();
         });
     }
 }
 
-// ⚠️新增：接收主窗口传来的秒数并启动倒计时
 void QuestionDialog::setTimeLimit(int seconds)
 {
     m_timeLeft = seconds;
+    m_progressBar->setRange(0, seconds);
+    m_progressBar->setValue(seconds);
     setWindowTitle(QString("答题倒计时: %1 秒").arg(m_timeLeft));
-    m_timer->start(1000); // 每 1000 毫秒 (1秒) 触发一次
+    m_timer->start(1000);
 }
 
-// ⚠️新增：每秒流逝的处理
 void QuestionDialog::onTimerTick()
 {
     m_timeLeft--;
+    m_progressBar->setValue(m_timeLeft);
+    setWindowTitle(QString("答题倒计时: %1 秒").arg(m_timeLeft));
     if (m_timeLeft <= 0) {
         m_timer->stop();
-        emit answerFinished(false, true); // 发送超时信号
+        emit answerFinished(false, true);
         m_allowClose = true;
         this->close();
-    } else {
-        setWindowTitle(QString("答题倒计时: %1 秒").arg(m_timeLeft)); // 实时更新标题栏
     }
 }
+
 void QuestionDialog::addTime(int secs)
 {
     m_timeLeft += secs;
-
-    // ⚠️ 修正：因为时间是显示在窗口标题上的，加完时间立刻同步刷新标题栏！
+    m_progressBar->setMaximum(m_progressBar->maximum() + secs);
+    m_progressBar->setValue(m_timeLeft);
     setWindowTitle(QString("答题倒计时: %1 秒").arg(m_timeLeft));
 }
 // ⚠️【新增】重写 closeEvent：如果是用户点 X，直接无视掉

@@ -477,13 +477,27 @@ void MainWindow::paintEvent(QPaintEvent *event)
     }
 
     // 画背景和棋盘格子线
-    painter.fillRect(rect(), QColor(210, 180, 140));
-
     int boardWidth = kBoardMargin * 2 + kBlockSize * kBoardSizeNum;
     int boardHeight = boardWidth;
+    int boardCenterX = boardOffsetX + boardWidth / 2;
+    int boardCenterY = boardHeight / 2;
 
-    // 【重要：画格子线前先重置画笔，确保格子线是正常的黑色细线】
-    painter.setPen(QPen(Qt::black, 1));
+    // 木纹渐变背景
+    QRadialGradient boardGrad(boardCenterX - 50, boardCenterY - 50, boardWidth / 2 + 50);
+    boardGrad.setColorAt(0, QColor(235, 200, 148));
+    boardGrad.setColorAt(0.5, QColor(215, 185, 140));
+    boardGrad.setColorAt(1, QColor(190, 155, 110));
+    painter.fillRect(rect(), boardGrad);
+
+    // 棋盘边缘阴影
+    QRect boardRect(boardOffsetX + kBoardMargin - 10, kBoardMargin - 10,
+                    boardWidth - kBoardMargin * 2 + 20, boardHeight - kBoardMargin * 2 + 20);
+    painter.setBrush(QColor(0, 0, 0, 30));
+    painter.setPen(Qt::NoPen);
+    painter.drawRoundedRect(boardRect.adjusted(4, 4, 4, 4), 6, 6);
+
+    // 格子线：用深棕色更柔和
+    painter.setPen(QPen(QColor(100, 75, 50), 1));
     for (int i = 0; i <= kBoardSizeNum; i++)
     {
         painter.drawLine(kBoardMargin + kBlockSize * i + boardOffsetX, kBoardMargin,
@@ -492,35 +506,38 @@ void MainWindow::paintEvent(QPaintEvent *event)
                          boardWidth - kBoardMargin + boardOffsetX, kBoardMargin + kBlockSize * i);
     }
 
-    // =================================================================
-    // 解决问题 1：修复鼠标悬停提示颜色不一致
-    // =================================================================
-    QBrush brush;
-    brush.setStyle(Qt::SolidPattern);
-
-    if (!m_isAnswering &&clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
-        clickPosCol >= 0 && clickPosCol < kBoardSizeNum &&
-        game && game->gameMapVec[clickPosRow][clickPosCol] == 0)
-    {
-        // ⚠️ 核心修改：如果你是用 !game->playerFlag 或者 game->playerFlag 决定的，
-        // 请确保这里的 if 条件和 actionByPerson 内部放子前的判断完全对齐！
-        // 假设当前谁落子，提示框就是谁的颜色：
-        if (game->playerFlag)
-            brush.setColor(Qt::white); // 白方回合显示白提示
-        else
-            brush.setColor(Qt::black); // 黑方回合显示黑提示
-
-        painter.setBrush(brush);
-        // 重置画笔，防止悬停框带红边
-        painter.setPen(Qt::NoPen);
-
-        painter.drawRect(kBoardMargin + kBlockSize * clickPosCol + kBlockSize / 2 - kMarkSize / 2 + boardOffsetX,
-                         kBoardMargin + kBlockSize * clickPosRow + kBlockSize / 2 - kMarkSize / 2,
-                         kMarkSize, kMarkSize);
+    // 画星位天元
+    QBrush starBrush(QColor(80, 60, 40));
+    painter.setBrush(starBrush);
+    painter.setPen(Qt::NoPen);
+    int starPos[5][2] = {{3,3}, {3,11}, {7,7}, {11,3}, {11,11}};
+    for (auto& pos : starPos) {
+        int sx = boardOffsetX + kBoardMargin + pos[1] * kBlockSize + kBlockSize / 2;
+        int sy = kBoardMargin + pos[0] * kBlockSize + kBlockSize / 2;
+        painter.drawEllipse(sx - 4, sy - 4, 8, 8);
     }
 
     // =================================================================
-    // 解决问题 2 & 3：遍历棋盘绘制棋子与红叉
+    // 悬停预览：半透明圆形棋子
+    // =================================================================
+    if (!m_isAnswering && clickPosRow >= 0 && clickPosRow < kBoardSizeNum &&
+        clickPosCol >= 0 && clickPosCol < kBoardSizeNum &&
+        game && game->gameMapVec[clickPosRow][clickPosCol] == 0)
+    {
+        int hx = boardOffsetX + kBoardMargin + clickPosCol * kBlockSize + kBlockSize / 2;
+        int hy = kBoardMargin + clickPosRow * kBlockSize + kBlockSize / 2;
+
+        if (game->playerFlag)
+            painter.setBrush(QColor(255, 255, 255, 100));
+        else
+            painter.setBrush(QColor(0, 0, 0, 80));
+
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(hx - kRadius, hy - kRadius, kRadius * 2, kRadius * 2);
+    }
+
+    // =================================================================
+    // 遍历棋盘绘制棋子与红叉
     // =================================================================
     if (game)
     {
@@ -532,16 +549,34 @@ void MainWindow::paintEvent(QPaintEvent *event)
 
                 if (game->gameMapVec[i][j] == 1) // 白子
                 {
-                    brush.setColor(Qt::white);
-                    painter.setBrush(brush);
+                    // 阴影
+                    painter.setBrush(QColor(0, 0, 0, 35));
                     painter.setPen(Qt::NoPen);
+                    painter.drawEllipse(centerX - kRadius + 3, centerY - kRadius + 3, kRadius * 2, kRadius * 2);
+                    // 3D 渐变主体
+                    QRadialGradient wg(centerX - 4, centerY - 4, kRadius);
+                    wg.setColorAt(0, Qt::white);
+                    wg.setColorAt(0.6, QColor(240, 240, 240));
+                    wg.setColorAt(1, QColor(200, 200, 200));
+                    painter.setBrush(wg);
+                    painter.drawEllipse(centerX - kRadius, centerY - kRadius, kRadius * 2, kRadius * 2);
+                    // 细边框
+                    painter.setPen(QPen(QColor(180, 180, 180), 1));
+                    painter.setBrush(Qt::NoBrush);
                     painter.drawEllipse(centerX - kRadius, centerY - kRadius, kRadius * 2, kRadius * 2);
                 }
                 else if (game->gameMapVec[i][j] == -1) // 黑子
                 {
-                    brush.setColor(Qt::black);
-                    painter.setBrush(brush);
+                    // 阴影
+                    painter.setBrush(QColor(0, 0, 0, 55));
                     painter.setPen(Qt::NoPen);
+                    painter.drawEllipse(centerX - kRadius + 3, centerY - kRadius + 3, kRadius * 2, kRadius * 2);
+                    // 3D 渐变主体
+                    QRadialGradient bg(centerX - 4, centerY - 4, kRadius);
+                    bg.setColorAt(0, QColor(100, 100, 100));
+                    bg.setColorAt(0.5, QColor(50, 50, 50));
+                    bg.setColorAt(1, Qt::black);
+                    painter.setBrush(bg);
                     painter.drawEllipse(centerX - kRadius, centerY - kRadius, kRadius * 2, kRadius * 2);
                 }
 

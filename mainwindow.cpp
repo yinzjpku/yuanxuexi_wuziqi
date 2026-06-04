@@ -415,15 +415,21 @@ void MainWindow::startGame(GameMode mode)
                     return; // 进入模式，直接返回，等待点击棋盘
                 }
                 if (!m_isAnswering || !m_currentDlg) return;
-                if (i == 4) { // 对应 "延长10s" 按钮
-                    currentEnergy -= 1; // 扣除能量
+                if (i == 4) {
+                    // 1. 严格拦截：如果能量不足 1 点，直接黑盒提示并 return 拦截
                     if (currentEnergy < 1) {
-                        QMessageBox::warning(this, "提示", "能量不足！");
-                        return;
+                        QMessageBox msgBox(this);
+                        msgBox.setWindowTitle("提示");
+                        msgBox.setText("能量不足！无法发动延长时间技能。");
+                        msgBox.setStyleSheet("QMessageBox { background-color: black; } QLabel { color: white; font-weight: bold; } QPushButton { background-color: #333; color: white; }");
+                        msgBox.exec();
+                        return; // 👈 极为关键！直接结束，不让代码往下走去扣能量
                     }
-                    m_currentDlg->addTime(10);
 
-                    update(); // 刷新能量条显示
+                    // 2. 只有能量充足时，才会走到这里执行
+                    currentEnergy -= 1;         // 扣除 1 点能量
+                    m_currentDlg->addTime(10);   // 弹窗增加 10 秒
+                    update();                    // 刷新主界面能量条显示
                 }
                 else if (i == 2) {
                     if (currentEnergy < 2) { // 👈 注意：这个技能消耗 2 能量
@@ -436,41 +442,45 @@ void MainWindow::startGame(GameMode mode)
                 }
                 else if (i == 3) {
                     if (currentEnergy < 1) {
-                        QMessageBox::warning(this, "提示", "能量不足！");
+                        QMessageBox msgBox(this);
+                        msgBox.setWindowTitle("提示");
+                        msgBox.setText("能量不足！");
+                        msgBox.setStyleSheet("QMessageBox { background-color: black; } QLabel { color: white; font-weight: bold; } QPushButton { background-color: #333; color: white; }");
+                        msgBox.exec();
                         return;
                     }
                     currentEnergy -= 1; // 扣除能量
 
-                    // 1. 极其关键：断开所有信号，防止触发 handleAnswerResult 去落子或封锁格子！
-                    m_currentDlg->disconnect();
-                    m_currentDlg->forceAllowClose();
-                    // 2. 绕过硬核防直接关闭机制：允许它关闭
-                    // 注意：如果你上一轮写了 m_allowClose 变量，记得在外部调用或者提供公开方法。
-                    // 因为已经在上面断开连接了，所以更暴力的做法是直接强行把它 delete 掉：
-                    m_currentDlg->close();
-                    m_currentDlg = nullptr;
+                    // 🌟【核心安全重构】：彻底摧毁旧弹窗，防止信号残留引发崩溃
+                    if (m_currentDlg) {
+                        // 1. 显式断开旧弹窗和当前主窗口的所有信号连接
+                        disconnect(m_currentDlg, &QuestionDialog::answerFinished, this, &MainWindow::handleAnswerResult);
 
-                    // 3. 悄悄洗掉答题锁定状态，允许重呼弹窗
-                    m_isAnswering = false;
+                        m_currentDlg->forceAllowClose(); // 允许关闭
+                        m_currentDlg->close();           // 关闭旧窗口
 
-                    // 4. 利用原本保存在 pendingRow 和 pendingCol 的坐标，重新拉起一个新题目弹窗！
-                    // 这一段逻辑直接复用 mouseReleaseEvent 里的创建代码：
-                    m_isAnswering = true; // 重新锁定状态
+                        // 2. 强行立刻释放内存，而不是等系统有空再删，彻底杜绝后台“诈尸”
+                        delete m_currentDlg;
+                        m_currentDlg = nullptr;
+                    }
 
+                    // 状态锁重置
+                    m_isAnswering = true;
+
+                    // 3. 抽取新题目并实例化
                     Question testQ = getRandomQuestion();
                     m_currentDlg = new QuestionDialog(testQ, this);
 
-                    // 绑定同样的结算信号槽
+                    // 4. 重新绑定新弹窗的信号槽
                     connect(m_currentDlg, &QuestionDialog::answerFinished, this, &MainWindow::handleAnswerResult);
 
                     m_currentDlg->setAttribute(Qt::WA_DeleteOnClose);
                     m_currentDlg->show();
 
-                    // 为新题目设置时间限制（比如 20 秒）
                     int limit = 20;
                     m_currentDlg->setTimeLimit(limit);
 
-                    update(); // 刷新主界面上的能量和UI显示
+                    update();
                 }
             });
 
@@ -1071,18 +1081,26 @@ void MainWindow::handleAnswerResult(bool isCorrect, bool isTimeout)
     {
         game->actionByPerson(pendingRow, pendingCol);
         wrongPositions.clear();
-        QMessageBox::information(this, "回答正确", "回答正确，成功落子！并为你积攒了能量。");
+        // ⚠️【核心修改】改成黑色背景的“回答正确”提示框
+        QMessageBox msgBox(this);
+        msgBox.setWindowTitle("回答正确");
+        msgBox.setText("回答正确，成功落子！并为你积攒了能量。");
+        msgBox.setStyleSheet("QMessageBox { background-color: black; } QLabel { color: white; font-weight: bold; } QPushButton { background-color: #333; color: white; }");
+        msgBox.exec();
         if (game->playerFlag) game->p2Energy += 1; else game->p1Energy += 1;
     }
     else
     {
         wrongPositions.push_back({pendingRow, pendingCol});
-        // 判断是因为答错，还是因为时间到了
+        QMessageBox msgBox(this);
+        msgBox.setWindowTitle("回答错误");
         if (isTimeout) {
-            QMessageBox::warning(this, "答题超时", "答题时间耗尽！该格子已被你封锁，请重新尝试。");
+            msgBox.setText("答题超时！该格子已被红叉封锁，本回合落子失败。");
         } else {
-            QMessageBox::warning(this, "回答错误", "回答错误！该格子已被你封锁，请重新尝试。");
+            msgBox.setText("回答错误！该格子已被红叉封锁，本回合落子失败。");
         }
+        msgBox.setStyleSheet("QMessageBox { background-color: black; } QLabel { color: white; font-weight: bold; } QPushButton { background-color: #333; color: white; }");
+        msgBox.exec();
     }
 
     // ⚠️【核心3】答题结束，恢复全局倒计时！（此时如果落子成功换了手，就会自动开始扣对手的时间）
